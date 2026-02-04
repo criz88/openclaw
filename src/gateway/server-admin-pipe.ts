@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import type { OpenClawConfig, ConfigFileSnapshot } from "../config/config.js";
@@ -44,6 +45,23 @@ function sendJson(res: ServerResponse, status: number, body: unknown) {
     "content-length": Buffer.byteLength(payload),
   });
   res.end(payload);
+}
+
+async function runCowsay(): Promise<{ ok: boolean; output?: string; error?: string }> {
+  return await new Promise((resolve) => {
+    const proc = spawn("uv", ["tool", "run", "cowsay", "-t", "Phase 2 OK"], {
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
+    let out = "";
+    let err = "";
+    proc.stdout?.on("data", (chunk) => (out += String(chunk)));
+    proc.stderr?.on("data", (chunk) => (err += String(chunk)));
+    proc.on("exit", (code) => {
+      if (code === 0) resolve({ ok: true, output: out.trim() });
+      else resolve({ ok: false, error: err.trim() || "cowsay failed" });
+    });
+  });
 }
 
 function notFound(res: ServerResponse) {
@@ -160,6 +178,12 @@ export async function startGatewayAdminPipe(params: {
 
       await params.reloadHandlers.applyHotReload(plan, nextConfig);
       return sendJson(res, 200, { ok: true, applied: "hot", plan });
+    }
+
+    if (url.pathname === "/api/v1/shim-test") {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      const result = await runCowsay();
+      return sendJson(res, result.ok ? 200 : 500, result);
     }
 
     return notFound(res);
