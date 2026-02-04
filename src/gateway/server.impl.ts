@@ -45,6 +45,7 @@ import { runOnboardingWizard } from "../wizard/onboarding.js";
 import { startGatewayConfigReloader } from "./config-reload.js";
 import { ExecApprovalManager } from "./exec-approval-manager.js";
 import { NodeRegistry } from "./node-registry.js";
+import { startGatewayAdminPipe } from "./server-admin-pipe.js";
 import { createChannelManager } from "./server-channels.js";
 import { createAgentEventHandler } from "./server-chat.js";
 import { createGatewayCloseHandler } from "./server-close.js";
@@ -591,6 +592,15 @@ export async function startGatewayServer(
     watchPath: CONFIG_PATH,
   });
 
+  const adminPipe = await startGatewayAdminPipe({
+    port,
+    bindHost,
+    controlUiEnabled,
+    nodeRegistry,
+    reloadHandlers: { applyHotReload, requestGatewayRestart },
+    log: { info: (msg) => log.info(msg), warn: (msg) => log.warn(msg) },
+  });
+
   const close = createGatewayCloseHandler({
     bonjourStop,
     tailscaleCleanup,
@@ -611,6 +621,7 @@ export async function startGatewayServer(
     clients,
     configReloader,
     browserControl,
+    adminPipe,
     wss,
     httpServer,
     httpServers,
