@@ -36,7 +36,7 @@
     "canvas:a2ui:bundle": "bash scripts/bundle-a2ui.sh",
     "check": "pnpm tsgo && pnpm lint && pnpm format",
     "check:loc": "node --import tsx scripts/check-ts-max-loc.ts --max 500",
-    "dev": "node scripts/run-node.mjs",
+    "dev": "node scripts/run-node.mjs --dev gateway",
     "docs:bin": "node scripts/build-docs-list.mjs",
     "docs:build": "cd docs && pnpm dlx --reporter append-only mint broken-links",
     "docs:dev": "cd docs && mint dev",
