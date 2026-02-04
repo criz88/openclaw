@@ -6,6 +6,10 @@ import process from "node:process";
 
 const args = process.argv.slice(2);
 const env = { ...process.env };
+
+if (args.includes("--dev") && !env.OPENCLAW_GATEWAY_TOKEN) {
+  env.OPENCLAW_GATEWAY_TOKEN = "dev-token";
+}
 const cwd = process.cwd();
 const compiler = "tsdown";
 
