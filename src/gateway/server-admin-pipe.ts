@@ -11,6 +11,7 @@ import { CONFIG_PATH, readConfigFileSnapshot, writeConfigFile } from "../config/
 import { VERSION } from "../version.js";
 import { buildToolsPrompt, listTools, TOOLS_POLICY_PROMPT } from "./server-methods/tools.js";
 import { loadGatewayModelCatalog } from "./server-model-catalog.js";
+import { modelsSetCommand } from "../commands/models/set.js";
 import {
   buildGatewayReloadPlan,
   diffConfigPaths,
@@ -228,6 +229,50 @@ export async function startGatewayAdminPipe(params: {
       if (req.method !== "GET") return methodNotAllowed(res);
       const models = await loadGatewayModelCatalog();
       return sendJson(res, 200, { ok: true, models });
+    }
+
+    if (url.pathname === "/api/v1/models/set") {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      const body = await readJson(req);
+      const model = typeof body?.model === "string" ? body.model.trim() : "";
+      if (!model) {
+        return sendJson(res, 400, { ok: false, error: "model is required" });
+      }
+      try {
+        await modelsSetCommand(model, defaultRuntime);
+        return sendJson(res, 200, { ok: true, model });
+      } catch (err) {
+        return sendJson(res, 400, { ok: false, error: String(err) });
+      }
+    }
+
+    if (url.pathname === "/api/v1/models/allowlist") {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      const body = await readJson(req);
+      const models = Array.isArray(body?.models) ? body.models.filter((m) => typeof m === "string") : [];
+      if (models.length === 0) {
+        return sendJson(res, 400, { ok: false, error: "models is required" });
+      }
+      const snapshot = await readConfigFileSnapshot();
+      if (!snapshot.valid) {
+        return sendJson(res, 400, { ok: false, error: "invalid config", issues: snapshot.issues });
+      }
+      const nextModels = { ...(snapshot.config.agents?.defaults?.models || {}) };
+      for (const key of models) {
+        if (!nextModels[key]) nextModels[key] = {};
+      }
+      const nextConfig = {
+        ...snapshot.config,
+        agents: {
+          ...snapshot.config.agents,
+          defaults: {
+            ...snapshot.config.agents?.defaults,
+            models: nextModels,
+          },
+        },
+      };
+      await writeConfigFile(nextConfig);
+      return sendJson(res, 200, { ok: true, count: models.length });
     }
 
     if (url.pathname === "/api/v1/reload") {
