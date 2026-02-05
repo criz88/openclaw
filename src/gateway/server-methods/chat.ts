@@ -467,10 +467,11 @@ export const chatHandlers: GatewayRequestHandlers = {
           ].join("\n")
         : "";
       const groupSystemPrompt = toolsPrompt ? `${policyPrompt}\n\n${toolsPrompt}` : policyPrompt;
+      const toolsPrelude = toolsPrompt ? `${policyPrompt}\n\n${toolsPrompt}\n\n` : "";
 
       const ctx: MsgContext = {
         Body: parsedMessage,
-        BodyForAgent: stampedMessage,
+        BodyForAgent: `${toolsPrelude}${stampedMessage}`,
         BodyForCommands: commandBody,
         RawBody: parsedMessage,
         CommandBody: commandBody,
