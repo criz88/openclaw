@@ -64,6 +64,20 @@ async function runCowsay(): Promise<{ ok: boolean; output?: string; error?: stri
   });
 }
 
+async function readJson(req: IncomingMessage): Promise<any> {
+  return await new Promise((resolve) => {
+    let data = "";
+    req.on("data", (chunk) => (data += chunk.toString()));
+    req.on("end", () => {
+      try {
+        resolve(data ? JSON.parse(data) : {});
+      } catch {
+        resolve({});
+      }
+    });
+  });
+}
+
 function notFound(res: ServerResponse) {
   sendJson(res, 404, { ok: false, error: "not found" });
 }
@@ -129,6 +143,23 @@ export async function startGatewayAdminPipe(params: {
         remoteIp: n.remoteIp,
       }));
       return sendJson(res, 200, { ok: true, nodes });
+    }
+
+    if (url.pathname === "/api/v1/nodes/invoke") {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      const body = await readJson(req);
+      const nodeId = typeof body?.nodeId === "string" ? body.nodeId.trim() : "";
+      const command = typeof body?.command === "string" ? body.command.trim() : "";
+      if (!nodeId || !command) {
+        return sendJson(res, 400, { ok: false, error: "nodeId and command are required" });
+      }
+      const result = await params.nodeRegistry.invoke({
+        nodeId,
+        command,
+        params: body?.params,
+        timeoutMs: typeof body?.timeoutMs === "number" ? body.timeoutMs : undefined,
+      });
+      return sendJson(res, result.ok ? 200 : 500, result);
     }
 
     if (url.pathname === "/api/v1/config") {
