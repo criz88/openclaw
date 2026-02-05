@@ -390,6 +390,46 @@ export async function startGatewayAdminPipe(params: {
       return sendJson(res, 200, { ok: true, ...result });
     }
 
+    if (url.pathname === "/api/v1/pairing/list") {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      const body = await readJson(req);
+      const { listChannelPairingRequests } = await import("../pairing/pairing-store.js");
+      const { resolvePairingChannel } = await import("../channels/plugins/pairing.js");
+      try {
+        const channel = resolvePairingChannel(body?.channel);
+        const requests = await listChannelPairingRequests(channel);
+        return sendJson(res, 200, { ok: true, channel, requests });
+      } catch (err) {
+        return sendJson(res, 400, { ok: false, error: String(err) });
+      }
+    }
+
+    if (url.pathname === "/api/v1/pairing/approve") {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      const body = await readJson(req);
+      const { approveChannelPairingCode } = await import("../pairing/pairing-store.js");
+      const { resolvePairingChannel, notifyPairingApproved } = await import(
+        "../channels/plugins/pairing.js"
+      );
+      const { loadConfig } = await import("../config/config.js");
+      try {
+        const channel = resolvePairingChannel(body?.channel);
+        const code = String(body?.code || "").trim();
+        const notify = body?.notify === true;
+        const approved = await approveChannelPairingCode({ channel, code });
+        if (!approved) {
+          return sendJson(res, 400, { ok: false, error: "invalid pairing code" });
+        }
+        if (notify) {
+          const cfg = loadConfig();
+          await notifyPairingApproved({ channelId: channel, id: approved.id, cfg });
+        }
+        return sendJson(res, 200, { ok: true, channel, approved });
+      } catch (err) {
+        return sendJson(res, 400, { ok: false, error: String(err) });
+      }
+    }
+
     if (url.pathname === "/api/v1/channels/list") {
       if (req.method !== "POST") return methodNotAllowed(res);
       const body = await readJson(req);

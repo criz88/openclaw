@@ -38,6 +38,8 @@ import type {
   ChannelsCapabilitiesParamsSchema,
   ChannelsResolveParamsSchema,
   ChannelsLogsParamsSchema,
+  PairingListParamsSchema,
+  PairingApproveParamsSchema,
   ChannelsStatusParamsSchema,
   ChannelsStatusResultSchema,
   TalkModeParamsSchema,
@@ -191,6 +193,8 @@ export type ChannelsListParams = Static<typeof ChannelsListParamsSchema>;
 export type ChannelsCapabilitiesParams = Static<typeof ChannelsCapabilitiesParamsSchema>;
 export type ChannelsResolveParams = Static<typeof ChannelsResolveParamsSchema>;
 export type ChannelsLogsParams = Static<typeof ChannelsLogsParamsSchema>;
+export type PairingListParams = Static<typeof PairingListParamsSchema>;
+export type PairingApproveParams = Static<typeof PairingApproveParamsSchema>;
 export type WebLoginStartParams = Static<typeof WebLoginStartParamsSchema>;
 export type WebLoginWaitParams = Static<typeof WebLoginWaitParamsSchema>;
 export type AgentSummary = Static<typeof AgentSummarySchema>;

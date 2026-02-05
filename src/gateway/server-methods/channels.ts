@@ -19,6 +19,15 @@ import {
   channelsResolveCommand,
   channelsLogsCommand,
 } from "../../commands/channels.js";
+import {
+  approveChannelPairingCode,
+  listChannelPairingRequests,
+} from "../../pairing/pairing-store.js";
+import {
+  listPairingChannels,
+  notifyPairingApproved,
+  resolvePairingChannel,
+} from "../../channels/plugins/pairing.js";
 import { runChannelLogin, runChannelLogout } from "../../cli/channel-auth.js";
 import { getChannelActivity } from "../../infra/channel-activity.js";
 import { DEFAULT_ACCOUNT_ID } from "../../routing/session-key.js";
@@ -42,6 +51,8 @@ import {
   validateChannelsCapabilitiesParams,
   validateChannelsResolveParams,
   validateChannelsLogsParams,
+  validatePairingListParams,
+  validatePairingApproveParams,
 } from "../protocol/index.js";
 import { formatForLog } from "../ws-log.js";
 
@@ -340,6 +351,50 @@ export const channelsHandlers: GatewayRequestHandlers = {
         ),
       );
       respond(true, payload, undefined);
+    } catch (err) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, String(err)));
+    }
+  },
+  "pairing.list": async ({ params, respond }) => {
+    if (!validatePairingListParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "invalid pairing.list params"),
+      );
+      return;
+    }
+    try {
+      const channel = resolvePairingChannel((params as any).channel);
+      const requests = await listChannelPairingRequests(channel);
+      respond(true, { channel, requests }, undefined);
+    } catch (err) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, String(err)));
+    }
+  },
+  "pairing.approve": async ({ params, respond }) => {
+    if (!validatePairingApproveParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "invalid pairing.approve params"),
+      );
+      return;
+    }
+    try {
+      const channel = resolvePairingChannel((params as any).channel);
+      const code = String((params as any).code || "").trim();
+      const notify = (params as any).notify === true;
+      const approved = await approveChannelPairingCode({ channel, code });
+      if (!approved) {
+        respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "invalid pairing code"));
+        return;
+      }
+      if (notify) {
+        const cfg = loadConfig();
+        await notifyPairingApproved({ channelId: channel, id: approved.id, cfg });
+      }
+      respond(true, { channel, approved }, undefined);
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, String(err)));
     }

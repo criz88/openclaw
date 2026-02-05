@@ -58,6 +58,8 @@ const READ_METHODS = new Set([
   "channels.capabilities",
   "channels.resolve",
   "channels.logs",
+  "pairing.list",
+  "pairing.approve",
   "channels.add",
   "channels.remove",
   "channels.login",
@@ -110,6 +112,7 @@ const WRITE_METHODS = new Set([
   "chat.send",
   "chat.abort",
   "browser.request",
+  "pairing.approve",
 ]);
 
 function authorizeGatewayMethod(method: string, client: GatewayRequestOptions["client"]) {

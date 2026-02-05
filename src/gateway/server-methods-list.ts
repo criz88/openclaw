@@ -8,6 +8,8 @@ const BASE_METHODS = [
   "channels.capabilities",
   "channels.resolve",
   "channels.logs",
+  "pairing.list",
+  "pairing.approve",
   "channels.add",
   "channels.remove",
   "channels.login",

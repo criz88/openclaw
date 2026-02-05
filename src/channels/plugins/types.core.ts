@@ -47,6 +47,8 @@ export type ChannelSetupInput = {
   code?: string;
   groupChannels?: string[];
   dmAllowlist?: string[];
+  dmPolicy?: string;
+  allowFrom?: string[];
   autoDiscoverChannels?: boolean;
 };
 

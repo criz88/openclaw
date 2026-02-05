@@ -325,6 +325,12 @@ export const validateChannelsResolveParams = ajv.compile<ChannelsResolveParams>(
 export const validateChannelsLogsParams = ajv.compile<ChannelsLogsParams>(
   ChannelsLogsParamsSchema,
 );
+export const validatePairingListParams = ajv.compile<PairingListParams>(
+  PairingListParamsSchema,
+);
+export const validatePairingApproveParams = ajv.compile<PairingApproveParams>(
+  PairingApproveParamsSchema,
+);
 export const validateModelsListParams = ajv.compile<ModelsListParams>(ModelsListParamsSchema);
 export const validateToolsListParams = ajv.compile<ToolsListParams>(ToolsListParamsSchema);
 export const validateSkillsStatusParams = ajv.compile<SkillsStatusParams>(SkillsStatusParamsSchema);
@@ -475,6 +481,8 @@ export {
   ChannelsCapabilitiesParamsSchema,
   ChannelsResolveParamsSchema,
   ChannelsLogsParamsSchema,
+  PairingListParamsSchema,
+  PairingApproveParamsSchema,
   WebLoginStartParamsSchema,
   WebLoginWaitParamsSchema,
   AgentSummarySchema,
@@ -565,6 +573,8 @@ export type {
   ChannelsCapabilitiesParams,
   ChannelsResolveParams,
   ChannelsLogsParams,
+  PairingListParams,
+  PairingApproveParams,
   WebLoginStartParams,
   WebLoginWaitParams,
   AgentSummary,

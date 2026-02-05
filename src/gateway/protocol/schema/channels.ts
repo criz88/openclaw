@@ -121,9 +121,27 @@ export const ChannelsAddParamsSchema = Type.Object(
     code: Type.Optional(Type.String()),
     groupChannels: Type.Optional(Type.String()),
     dmAllowlist: Type.Optional(Type.String()),
+    dmPolicy: Type.Optional(Type.String()),
+    allowFrom: Type.Optional(Type.String()),
     autoDiscoverChannels: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: true },
+);
+
+export const PairingListParamsSchema = Type.Object(
+  {
+    channel: NonEmptyString,
+  },
+  { additionalProperties: false },
+);
+
+export const PairingApproveParamsSchema = Type.Object(
+  {
+    channel: NonEmptyString,
+    code: NonEmptyString,
+    notify: Type.Optional(Type.Boolean()),
+  },
+  { additionalProperties: false },
 );
 
 export const ChannelsRemoveParamsSchema = Type.Object(

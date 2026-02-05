@@ -48,6 +48,8 @@ export type ChannelsAddOptions = {
   code?: string;
   groupChannels?: string;
   dmAllowlist?: string;
+  dmPolicy?: string;
+  allowFrom?: string;
   autoDiscoverChannels?: boolean;
 };
 
@@ -191,6 +193,7 @@ export async function channelsAddCommand(
         : undefined;
   const groupChannels = parseList(opts.groupChannels);
   const dmAllowlist = parseList(opts.dmAllowlist);
+  const allowFrom = parseList(opts.allowFrom);
 
   const validationError = plugin.setup.validateInput?.({
     cfg: nextConfig,
@@ -271,6 +274,39 @@ export async function channelsAddCommand(
     dmAllowlist,
     autoDiscoverChannels: opts.autoDiscoverChannels,
   });
+
+  if (opts.dmPolicy || allowFrom) {
+    const dmPolicy = opts.dmPolicy?.trim();
+    const allowFromList = allowFrom;
+    if (channel === "discord" || channel === "slack") {
+      nextConfig = {
+        ...nextConfig,
+        channels: {
+          ...nextConfig.channels,
+          [channel]: {
+            ...(nextConfig.channels as any)?.[channel],
+            dm: {
+              ...((nextConfig.channels as any)?.[channel]?.dm ?? {}),
+              ...(dmPolicy ? { policy: dmPolicy } : {}),
+              ...(allowFromList ? { allowFrom: allowFromList } : {}),
+            },
+          },
+        },
+      } as typeof nextConfig;
+    } else {
+      nextConfig = {
+        ...nextConfig,
+        channels: {
+          ...nextConfig.channels,
+          [channel]: {
+            ...(nextConfig.channels as any)?.[channel],
+            ...(dmPolicy ? { dmPolicy } : {}),
+            ...(allowFromList ? { allowFrom: allowFromList } : {}),
+          },
+        },
+      } as typeof nextConfig;
+    }
+  }
 
   await writeConfigFile(nextConfig);
   runtime.log(`Added ${channelLabel(channel)} account "${accountId}".`);
