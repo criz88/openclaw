@@ -9,6 +9,7 @@ import type { OpenClawConfig, ConfigFileSnapshot } from "../config/config.js";
 import type { NodeRegistry } from "./node-registry.js";
 import { CONFIG_PATH, readConfigFileSnapshot, writeConfigFile } from "../config/config.js";
 import { VERSION } from "../version.js";
+import { buildToolsPrompt, listTools, TOOLS_POLICY_PROMPT } from "./server-methods/tools.js";
 import {
   buildGatewayReloadPlan,
   diffConfigPaths,
@@ -123,31 +124,7 @@ function extractAssistantTexts(result: any): string[] {
   return texts;
 }
 
-function buildToolsPrompt(nodeRegistry: NodeRegistry): string {
-  const tools = nodeRegistry
-    .listConnected()
-    .flatMap((node) =>
-      (node.actions ?? []).map((action) => ({
-        id: action.id,
-        label: action.label,
-        description: action.description,
-        command: action.command,
-        params: action.params,
-        nodeId: node.nodeId,
-        nodeName: node.displayName || node.nodeId,
-      })),
-    );
-  if (tools.length === 0) return "";
-  const lines: string[] = ["Available actions (tools.list):"];
-  for (const tool of tools) {
-    const label = tool.label || tool.id;
-    const desc = tool.description ? ` — ${tool.description}` : "";
-    const node = tool.nodeName ? ` @ ${tool.nodeName}` : "";
-    lines.push(`- ${label}${node} (command: ${tool.command})${desc}`);
-  }
-  lines.push("Use node.invoke with the command + params shown above to call these actions.");
-  return lines.join("\n");
-}
+// buildToolsPrompt moved to server-methods/tools.ts
 
 function notFound(res: ServerResponse) {
   sendJson(res, 404, { ok: false, error: "not found" });
@@ -762,17 +739,15 @@ export async function startGatewayAdminPipe(params: {
       const sessionKey = typeof body?.sessionKey === "string" ? body.sessionKey.trim() : "";
       if (!message) return sendJson(res, 400, { ok: false, error: "message required" });
       try {
-        const toolsPrompt = buildToolsPrompt(params.nodeRegistry);
+        const toolsPrompt = buildToolsPrompt(listTools({ nodeRegistry: params.nodeRegistry }));
         const lowered = message.toLowerCase();
         const isToolsQuery = lowered.includes("tools") || lowered.includes("actions") || lowered.includes("可用") || lowered.includes("工具");
         if (isToolsQuery && toolsPrompt) {
           return sendJson(res, 200, { ok: true, texts: [toolsPrompt] });
         }
-        const policyPrompt =
-          "When describing available tools or actions, ONLY use the tools.list data below. Do not list any internal/system tools.";
         const extraSystemPrompt = toolsPrompt
-          ? `${policyPrompt}\n\n${toolsPrompt}`
-          : policyPrompt;
+          ? `${TOOLS_POLICY_PROMPT}\n\n${toolsPrompt}`
+          : TOOLS_POLICY_PROMPT;
         const result = await agentCommand(
           {
             message,
