@@ -328,8 +328,12 @@ export async function startGatewayAdminPipe(params: {
     if (url.pathname === "/api/v1/oauth/gemini/start") {
       if (req.method !== "POST") return methodNotAllowed(res);
       const { startGeminiOAuth } = await import("./oauth-gemini.js");
-      const result = await startGeminiOAuth();
-      return sendJson(res, 200, { ok: true, ...result });
+      try {
+        const result = await startGeminiOAuth();
+        return sendJson(res, 200, { ok: true, ...result });
+      } catch (err) {
+        return sendJson(res, 400, { ok: false, error: String(err) });
+      }
     }
 
     if (url.pathname === "/api/v1/oauth/gemini/complete") {
