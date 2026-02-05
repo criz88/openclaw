@@ -31,6 +31,20 @@ import {
   AgentWaitParamsSchema,
   type ChannelsLogoutParams,
   ChannelsLogoutParamsSchema,
+  type ChannelsAddParams,
+  ChannelsAddParamsSchema,
+  type ChannelsRemoveParams,
+  ChannelsRemoveParamsSchema,
+  type ChannelsLoginParams,
+  ChannelsLoginParamsSchema,
+  type ChannelsListParams,
+  ChannelsListParamsSchema,
+  type ChannelsCapabilitiesParams,
+  ChannelsCapabilitiesParamsSchema,
+  type ChannelsResolveParams,
+  ChannelsResolveParamsSchema,
+  type ChannelsLogsParams,
+  ChannelsLogsParamsSchema,
   type ChannelsStatusParams,
   ChannelsStatusParamsSchema,
   type ChannelsStatusResult,
@@ -290,6 +304,27 @@ export const validateChannelsStatusParams = ajv.compile<ChannelsStatusParams>(
 export const validateChannelsLogoutParams = ajv.compile<ChannelsLogoutParams>(
   ChannelsLogoutParamsSchema,
 );
+export const validateChannelsAddParams = ajv.compile<ChannelsAddParams>(
+  ChannelsAddParamsSchema,
+);
+export const validateChannelsRemoveParams = ajv.compile<ChannelsRemoveParams>(
+  ChannelsRemoveParamsSchema,
+);
+export const validateChannelsLoginParams = ajv.compile<ChannelsLoginParams>(
+  ChannelsLoginParamsSchema,
+);
+export const validateChannelsListParams = ajv.compile<ChannelsListParams>(
+  ChannelsListParamsSchema,
+);
+export const validateChannelsCapabilitiesParams = ajv.compile<ChannelsCapabilitiesParams>(
+  ChannelsCapabilitiesParamsSchema,
+);
+export const validateChannelsResolveParams = ajv.compile<ChannelsResolveParams>(
+  ChannelsResolveParamsSchema,
+);
+export const validateChannelsLogsParams = ajv.compile<ChannelsLogsParams>(
+  ChannelsLogsParamsSchema,
+);
 export const validateModelsListParams = ajv.compile<ModelsListParams>(ModelsListParamsSchema);
 export const validateToolsListParams = ajv.compile<ToolsListParams>(ToolsListParamsSchema);
 export const validateSkillsStatusParams = ajv.compile<SkillsStatusParams>(SkillsStatusParamsSchema);
@@ -433,6 +468,13 @@ export {
   ChannelsStatusParamsSchema,
   ChannelsStatusResultSchema,
   ChannelsLogoutParamsSchema,
+  ChannelsAddParamsSchema,
+  ChannelsRemoveParamsSchema,
+  ChannelsLoginParamsSchema,
+  ChannelsListParamsSchema,
+  ChannelsCapabilitiesParamsSchema,
+  ChannelsResolveParamsSchema,
+  ChannelsLogsParamsSchema,
   WebLoginStartParamsSchema,
   WebLoginWaitParamsSchema,
   AgentSummarySchema,
@@ -516,6 +558,13 @@ export type {
   ChannelsStatusParams,
   ChannelsStatusResult,
   ChannelsLogoutParams,
+  ChannelsAddParams,
+  ChannelsRemoveParams,
+  ChannelsLoginParams,
+  ChannelsListParams,
+  ChannelsCapabilitiesParams,
+  ChannelsResolveParams,
+  ChannelsLogsParams,
   WebLoginStartParams,
   WebLoginWaitParams,
   AgentSummary,
