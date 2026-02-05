@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { GatewayRequestHandlers } from "./types.js";
 import { listAgentIds } from "../../agents/agent-scope.js";
 import { agentCommand } from "../../commands/agent.js";
-import { listTools } from "./tools.js";
+import { listTools, buildToolsPrompt } from "./tools.js";
 import { loadConfig } from "../../config/config.js";
 import {
   resolveAgentIdFromSessionKey,
@@ -42,20 +42,7 @@ import { formatForLog } from "../ws-log.js";
 import { waitForAgentJob } from "./agent-job.js";
 import { injectTimestamp, timestampOptsFromConfig } from "./agent-timestamp.js";
 
-const buildToolsPrompt = (context: { nodeRegistry: { listConnected: () => Array<{ nodeId: string; displayName?: string; actions?: Array<{ id: string; label?: string; description?: string; command: string; params?: unknown }> }> } }) => {
-  const tools = listTools(context);
-  if (tools.length === 0) return "";
-  const lines: string[] = ["Available actions (tools.list):"]; 
-  for (const tool of tools) {
-    const label = tool.label || tool.id;
-    const desc = tool.description ? ` — ${tool.description}` : "";
-    const node = tool.nodeName ? ` @ ${tool.nodeName}` : "";
-    lines.push(`- ${label}${node} (command: ${tool.command})${desc}`);
-  }
-  lines.push("Use node.invoke with the command + params shown above to call these actions.");
-  return lines.join("\n");
-};
-
+// buildToolsPrompt moved to server-methods/tools.ts
 export const agentHandlers: GatewayRequestHandlers = {
   agent: async ({ params, respond, context }) => {
     const p = params;
@@ -100,7 +87,7 @@ export const agentHandlers: GatewayRequestHandlers = {
       label?: string;
       spawnedBy?: string;
     };
-    const toolsPrompt = buildToolsPrompt(context);
+    const toolsPrompt = buildToolsPrompt(listTools(context));
     if (toolsPrompt) {
       const existing = request.extraSystemPrompt?.trim();
       request.extraSystemPrompt = existing

@@ -17,6 +17,23 @@ export const listTools = (context: { nodeRegistry: { listConnected: () => Array<
     );
 };
 
+export const TOOLS_POLICY_PROMPT =
+  "When describing available tools or actions, ONLY use the tools.list data below. Do not list any internal/system tools.";
+
+export function buildToolsPrompt(tools: ReturnType<typeof listTools>): string {
+  if (tools.length === 0) return "";
+  return [
+    "Available actions (tools.list):",
+    ...tools.map((tool) => {
+      const label = tool.label || tool.id;
+      const desc = tool.description ? ` — ${tool.description}` : "";
+      const node = tool.nodeName ? ` @ ${tool.nodeName}` : "";
+      return `- ${label}${node} (command: ${tool.command})${desc}`;
+    }),
+    "Use node.invoke with the command + params shown above to call these actions.",
+  ].join("\n");
+}
+
 export const toolsHandlers: GatewayRequestHandlers = {
   "tools.list": ({ params, respond, context }) => {
     if (!validateToolsListParams(params)) {
