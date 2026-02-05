@@ -52,7 +52,7 @@ const PLATFORM_DEFAULTS: Record<string, string[]> = {
     ...SYSTEM_COMMANDS,
   ],
   linux: [...SYSTEM_COMMANDS],
-  windows: [...SYSTEM_COMMANDS, ...INPUT_COMMANDS],
+  windows: [...SYSTEM_COMMANDS, ...INPUT_COMMANDS, ...SCREEN_COMMANDS],
   unknown: [
     ...CANVAS_COMMANDS,
     ...CAMERA_COMMANDS,
