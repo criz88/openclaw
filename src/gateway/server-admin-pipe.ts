@@ -10,6 +10,7 @@ import type { NodeRegistry } from "./node-registry.js";
 import { CONFIG_PATH, readConfigFileSnapshot, writeConfigFile } from "../config/config.js";
 import { VERSION } from "../version.js";
 import { buildToolsPrompt, listTools, TOOLS_POLICY_PROMPT } from "./server-methods/tools.js";
+import { loadGatewayModelCatalog } from "./server-model-catalog.js";
 import {
   buildGatewayReloadPlan,
   diffConfigPaths,
@@ -221,6 +222,12 @@ export async function startGatewayAdminPipe(params: {
         config: snapshot.valid ? snapshot.config : null,
         issues: snapshot.valid ? [] : snapshot.issues,
       });
+    }
+
+    if (url.pathname === "/api/v1/models/list") {
+      if (req.method !== "GET") return methodNotAllowed(res);
+      const models = await loadGatewayModelCatalog();
+      return sendJson(res, 200, { ok: true, models });
     }
 
     if (url.pathname === "/api/v1/reload") {
