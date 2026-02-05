@@ -20,6 +20,8 @@ import type {
   AgentsListResultSchema,
   ModelChoiceSchema,
   ModelsListParamsSchema,
+  ToolsListParamsSchema,
+  ToolsListResultSchema,
   ModelsListResultSchema,
   SkillsBinsParamsSchema,
   SkillsBinsResultSchema,
@@ -189,6 +191,8 @@ export type AgentsListParams = Static<typeof AgentsListParamsSchema>;
 export type AgentsListResult = Static<typeof AgentsListResultSchema>;
 export type ModelChoice = Static<typeof ModelChoiceSchema>;
 export type ModelsListParams = Static<typeof ModelsListParamsSchema>;
+export type ToolsListParams = Static<typeof ToolsListParamsSchema>;
+export type ToolsListResult = Static<typeof ToolsListResultSchema>;
 export type ModelsListResult = Static<typeof ModelsListResultSchema>;
 export type SkillsStatusParams = Static<typeof SkillsStatusParamsSchema>;
 export type SkillsBinsParams = Static<typeof SkillsBinsParamsSchema>;

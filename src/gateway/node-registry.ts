@@ -15,7 +15,7 @@ export type NodeSession = {
   remoteIp?: string;
   caps: string[];
   commands: string[];
-  skills?: Array<{ id: string; label?: string; description?: string; command: string; params?: unknown }>;
+  actions?: Array<{ id: string; label?: string; description?: string; command: string; params?: unknown }>;
   permissions?: Record<string, boolean>;
   pathEnv?: string;
   connectedAtMs: number;
@@ -105,10 +105,10 @@ export class NodeRegistry {
     return this.nodesById.get(nodeId);
   }
 
-  setSkills(nodeId: string, skills: Array<{ id: string; label?: string; description?: string; command: string; params?: unknown }>) {
+  setActions(nodeId: string, actions: Array<{ id: string; label?: string; description?: string; command: string; params?: unknown }>) {
     const node = this.nodesById.get(nodeId);
     if (!node) return false;
-    node.skills = skills;
+    node.actions = actions;
     return true;
   }
 

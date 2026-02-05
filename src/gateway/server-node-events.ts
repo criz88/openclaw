@@ -171,7 +171,7 @@ export const handleNodeEvent = async (ctx: NodeEventContext, nodeId: string, evt
       ctx.nodeSubscribe(nodeId, sessionKey);
       return;
     }
-    case "skills.register": {
+    case "actions.register": {
       if (!evt.payloadJSON) {
         return;
       }
@@ -183,8 +183,8 @@ export const handleNodeEvent = async (ctx: NodeEventContext, nodeId: string, evt
       }
       const obj =
         typeof payload === "object" && payload !== null ? (payload as Record<string, unknown>) : {};
-      const skillsRaw = Array.isArray(obj.skills) ? obj.skills : [];
-      const skills = skillsRaw
+      const actionsRaw = Array.isArray(obj.actions) ? obj.actions : [];
+      const actions = actionsRaw
         .map((entry) => (typeof entry === "object" && entry !== null ? (entry as Record<string, unknown>) : null))
         .filter(Boolean)
         .map((entry) => ({
@@ -198,11 +198,11 @@ export const handleNodeEvent = async (ctx: NodeEventContext, nodeId: string, evt
           params: (entry as Record<string, unknown>)?.params as unknown,
         }))
         .filter((entry) => entry.id && entry.command);
-      if (skills.length === 0) {
+      if (actions.length === 0) {
         return;
       }
-      ctx.nodeRegistry.setSkills(nodeId, skills);
-      ctx.broadcast("node.skills.updated", { nodeId, skills }, { dropIfSlow: true });
+      ctx.nodeRegistry.setActions(nodeId, actions);
+      ctx.broadcast("node.actions.updated", { nodeId, actions }, { dropIfSlow: true });
       return;
     }
     case "chat.unsubscribe": {

@@ -31,6 +31,7 @@ const BASE_METHODS = [
   "wizard.status",
   "talk.mode",
   "models.list",
+  "tools.list",
   "agents.list",
   "agents.files.list",
   "agents.files.get",

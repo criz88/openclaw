@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { GatewayRequestHandlers } from "./types.js";
 import { listAgentIds } from "../../agents/agent-scope.js";
 import { agentCommand } from "../../commands/agent.js";
+import { listTools } from "./tools.js";
 import { loadConfig } from "../../config/config.js";
 import {
   resolveAgentIdFromSessionKey,
@@ -41,26 +42,17 @@ import { formatForLog } from "../ws-log.js";
 import { waitForAgentJob } from "./agent-job.js";
 import { injectTimestamp, timestampOptsFromConfig } from "./agent-timestamp.js";
 
-const buildNodeSkillsPrompt = (context: { nodeRegistry: { listConnected: () => Array<{ nodeId: string; displayName?: string; skills?: Array<{ id: string; label?: string; description?: string; command: string; params?: unknown }> }> } }) => {
-  const nodes = context.nodeRegistry.listConnected();
-  const withSkills = nodes
-    .map((node) => ({
-      nodeId: node.nodeId,
-      name: node.displayName || node.nodeId,
-      skills: node.skills ?? [],
-    }))
-    .filter((node) => node.skills.length > 0);
-  if (withSkills.length === 0) return "";
-  const lines: string[] = ["Available node skills:"];
-  for (const node of withSkills) {
-    lines.push(`- ${node.name} (${node.nodeId})`);
-    for (const skill of node.skills) {
-      const label = skill.label || skill.id;
-      const desc = skill.description ? ` — ${skill.description}` : "";
-      lines.push(`  - ${label} (command: ${skill.command})${desc}`);
-    }
+const buildToolsPrompt = (context: { nodeRegistry: { listConnected: () => Array<{ nodeId: string; displayName?: string; actions?: Array<{ id: string; label?: string; description?: string; command: string; params?: unknown }> }> } }) => {
+  const tools = listTools(context);
+  if (tools.length === 0) return "";
+  const lines: string[] = ["Available actions (tools.list):"]; 
+  for (const tool of tools) {
+    const label = tool.label || tool.id;
+    const desc = tool.description ? ` — ${tool.description}` : "";
+    const node = tool.nodeName ? ` @ ${tool.nodeName}` : "";
+    lines.push(`- ${label}${node} (command: ${tool.command})${desc}`);
   }
-  lines.push("Use node.invoke with the command + params shown above to call these skills.");
+  lines.push("Use node.invoke with the command + params shown above to call these actions.");
   return lines.join("\n");
 };
 
@@ -108,12 +100,12 @@ export const agentHandlers: GatewayRequestHandlers = {
       label?: string;
       spawnedBy?: string;
     };
-    const nodeSkillsPrompt = buildNodeSkillsPrompt(context);
-    if (nodeSkillsPrompt) {
+    const toolsPrompt = buildToolsPrompt(context);
+    if (toolsPrompt) {
       const existing = request.extraSystemPrompt?.trim();
       request.extraSystemPrompt = existing
-        ? `${existing}\n\n${nodeSkillsPrompt}`
-        : nodeSkillsPrompt;
+        ? `${existing}\n\n${toolsPrompt}`
+        : toolsPrompt;
     }
     const cfg = loadConfig();
     const idem = request.idempotencyKey;

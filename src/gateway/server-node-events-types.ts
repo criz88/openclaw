@@ -28,7 +28,7 @@ export type NodeEventContext = {
   refreshHealthSnapshot: (opts?: { probe?: boolean }) => Promise<HealthSummary>;
   loadGatewayModelCatalog: () => Promise<ModelCatalogEntry[]>;
   logGateway: { warn: (msg: string) => void };
-  nodeRegistry: { setSkills: (nodeId: string, skills: Array<{ id: string; label?: string; description?: string; command: string; params?: unknown }>) => boolean };
+  nodeRegistry: { setActions: (nodeId: string, actions: Array<{ id: string; label?: string; description?: string; command: string; params?: unknown }>) => boolean };
 };
 
 export type NodeEvent = {

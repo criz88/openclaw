@@ -110,6 +110,23 @@ export const AgentsFilesSetResultSchema = Type.Object(
 
 export const ModelsListParamsSchema = Type.Object({}, { additionalProperties: false });
 
+export const ToolsListParamsSchema = Type.Object({}, { additionalProperties: false });
+
+export const ToolsListResultSchema = Type.Object({
+  ok: Type.Boolean(),
+  tools: Type.Array(
+    Type.Object({
+      id: Type.String(),
+      label: Type.Optional(Type.String()),
+      description: Type.Optional(Type.String()),
+      command: Type.String(),
+      params: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+      nodeId: Type.Optional(Type.String()),
+      nodeName: Type.Optional(Type.String()),
+    }),
+  ),
+});
+
 export const ModelsListResultSchema = Type.Object(
   {
     models: Type.Array(ModelChoiceSchema),
