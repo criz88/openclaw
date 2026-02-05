@@ -32,6 +32,8 @@ const BASE_METHODS = [
   "talk.mode",
   "models.list",
   "tools.list",
+  "oauth.qwen.start",
+  "oauth.qwen.poll",
   "agents.list",
   "agents.files.list",
   "agents.files.get",

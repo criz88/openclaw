@@ -218,6 +218,23 @@ export async function startGatewayAdminPipe(params: {
       return sendJson(res, result.ok ? 200 : 500, result);
     }
 
+    if (url.pathname === "/api/v1/oauth/qwen/start") {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      const { startQwenOAuth } = await import("./oauth-qwen.js");
+      const result = await startQwenOAuth();
+      return sendJson(res, 200, { ok: true, ...result });
+    }
+
+    if (url.pathname === "/api/v1/oauth/qwen/poll") {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      const body = await readJson(req);
+      const state = typeof body?.state === "string" ? body.state.trim() : "";
+      if (!state) return sendJson(res, 400, { ok: false, error: "state required" });
+      const { pollQwenOAuth } = await import("./oauth-qwen.js");
+      const result = await pollQwenOAuth(state);
+      return sendJson(res, 200, { ok: true, ...result });
+    }
+
     return notFound(res);
   });
 

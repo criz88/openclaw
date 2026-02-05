@@ -19,6 +19,7 @@ import { sessionsHandlers } from "./server-methods/sessions.js";
 import { skillsHandlers } from "./server-methods/skills.js";
 import { systemHandlers } from "./server-methods/system.js";
 import { toolsHandlers } from "./server-methods/tools.js";
+import { oauthHandlers } from "./server-methods/oauth.js";
 import { talkHandlers } from "./server-methods/talk.js";
 import { ttsHandlers } from "./server-methods/tts.js";
 import { updateHandlers } from "./server-methods/update.js";
@@ -60,6 +61,8 @@ const READ_METHODS = new Set([
   "tts.providers",
   "models.list",
   "tools.list",
+  "oauth.qwen.start",
+  "oauth.qwen.poll",
   "agents.list",
   "agent.identity.get",
   "skills.status",
@@ -181,6 +184,7 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
   ...sessionsHandlers,
   ...systemHandlers,
   ...toolsHandlers,
+  ...oauthHandlers,
   ...updateHandlers,
   ...nodeHandlers,
   ...sendHandlers,
