@@ -36,13 +36,13 @@ function toFormUrlEncoded(data: Record<string, string>): string {
     .join("&");
 }
 
-function generatePkce(): { verifier: string; challenge: string } {
+export function generateQwenPkce(): { verifier: string; challenge: string } {
   const verifier = randomBytes(32).toString("base64url");
   const challenge = createHash("sha256").update(verifier).digest("base64url");
   return { verifier, challenge };
 }
 
-async function requestDeviceCode(params: { challenge: string }): Promise<QwenDeviceAuthorization> {
+export async function requestQwenDeviceCode(params: { challenge: string }): Promise<QwenDeviceAuthorization> {
   const response = await fetch(QWEN_OAUTH_DEVICE_CODE_ENDPOINT, {
     method: "POST",
     headers: {
@@ -73,7 +73,7 @@ async function requestDeviceCode(params: { challenge: string }): Promise<QwenDev
   return payload;
 }
 
-async function pollDeviceToken(params: {
+export async function pollQwenDeviceToken(params: {
   deviceCode: string;
   verifier: string;
 }): Promise<DeviceTokenResult> {
@@ -142,8 +142,8 @@ export async function loginQwenPortalOAuth(params: {
   note: (message: string, title?: string) => Promise<void>;
   progress: { update: (message: string) => void; stop: (message?: string) => void };
 }): Promise<QwenOAuthToken> {
-  const { verifier, challenge } = generatePkce();
-  const device = await requestDeviceCode({ challenge });
+  const { verifier, challenge } = generateQwenPkce();
+  const device = await requestQwenDeviceCode({ challenge });
   const verificationUrl = device.verification_uri_complete || device.verification_uri;
 
   await params.note(
@@ -166,7 +166,7 @@ export async function loginQwenPortalOAuth(params: {
 
   while (Date.now() - start < timeoutMs) {
     params.progress.update("Waiting for Qwen OAuth approval…");
-    const result = await pollDeviceToken({
+    const result = await pollQwenDeviceToken({
       deviceCode: device.device_code,
       verifier,
     });

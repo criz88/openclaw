@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { spawn } from "node:child_process";
+import { agentCommand } from "../commands/agent.js";
+import { defaultRuntime } from "../runtime.js";
 import os from "node:os";
 import path from "node:path";
 import type { OpenClawConfig, ConfigFileSnapshot } from "../config/config.js";
@@ -76,6 +78,40 @@ async function readJson(req: IncomingMessage): Promise<any> {
       }
     });
   });
+}
+
+function extractAssistantTexts(result: any): string[] {
+  const payloads = Array.isArray(result?.payloads) ? result.payloads : [];
+  const texts = payloads
+    .map((p: any) => (typeof p?.text === "string" ? p.text.trim() : ""))
+    .filter((t: string) => t.length > 0);
+  return texts;
+}
+
+function buildToolsPrompt(nodeRegistry: NodeRegistry): string {
+  const tools = nodeRegistry
+    .listConnected()
+    .flatMap((node) =>
+      (node.actions ?? []).map((action) => ({
+        id: action.id,
+        label: action.label,
+        description: action.description,
+        command: action.command,
+        params: action.params,
+        nodeId: node.nodeId,
+        nodeName: node.displayName || node.nodeId,
+      })),
+    );
+  if (tools.length === 0) return "";
+  const lines: string[] = ["Available actions (tools.list):"];
+  for (const tool of tools) {
+    const label = tool.label || tool.id;
+    const desc = tool.description ? ` — ${tool.description}` : "";
+    const node = tool.nodeName ? ` @ ${tool.nodeName}` : "";
+    lines.push(`- ${label}${node} (command: ${tool.command})${desc}`);
+  }
+  lines.push("Use node.invoke with the command + params shown above to call these actions.");
+  return lines.join("\n");
 }
 
 function notFound(res: ServerResponse) {
@@ -233,6 +269,41 @@ export async function startGatewayAdminPipe(params: {
       const { pollQwenOAuth } = await import("./oauth-qwen.js");
       const result = await pollQwenOAuth(state);
       return sendJson(res, 200, { ok: true, ...result });
+    }
+
+    if (url.pathname === "/api/v1/agent") {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      const body = await readJson(req);
+      const message = typeof body?.message === "string" ? body.message.trim() : "";
+      const sessionKey = typeof body?.sessionKey === "string" ? body.sessionKey.trim() : "";
+      if (!message) return sendJson(res, 400, { ok: false, error: "message required" });
+      try {
+        const toolsPrompt = buildToolsPrompt(params.nodeRegistry);
+        const lowered = message.toLowerCase();
+        const isToolsQuery = lowered.includes("tools") || lowered.includes("actions") || lowered.includes("可用") || lowered.includes("工具");
+        if (isToolsQuery && toolsPrompt) {
+          return sendJson(res, 200, { ok: true, texts: [toolsPrompt] });
+        }
+        const policyPrompt =
+          "When describing available tools or actions, ONLY use the tools.list data below. Do not list any internal/system tools.";
+        const extraSystemPrompt = toolsPrompt
+          ? `${policyPrompt}\n\n${toolsPrompt}`
+          : policyPrompt;
+        const result = await agentCommand(
+          {
+            message,
+            sessionKey: sessionKey || "desktop-chat",
+            to: "desktop-chat",
+            deliver: false,
+            extraSystemPrompt,
+          },
+          defaultRuntime,
+        );
+        const texts = extractAssistantTexts(result);
+        return sendJson(res, 200, { ok: true, texts });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err) });
+      }
     }
 
     return notFound(res);
