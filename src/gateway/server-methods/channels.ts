@@ -10,16 +10,38 @@ import {
   normalizeChannelId,
 } from "../../channels/plugins/index.js";
 import { buildChannelAccountSnapshot } from "../../channels/plugins/status.js";
-import { loadConfig, readConfigFileSnapshot } from "../../config/config.js";
+import { loadConfig, readConfigFileSnapshot, writeConfigFile } from "../../config/config.js";
+import {
+  channelsAddCommand,
+  channelsRemoveCommand,
+  channelsListCommand,
+  channelsCapabilitiesCommand,
+  channelsResolveCommand,
+  channelsLogsCommand,
+} from "../../commands/channels.js";
+import { runChannelLogin, runChannelLogout } from "../../cli/channel-auth.js";
 import { getChannelActivity } from "../../infra/channel-activity.js";
 import { DEFAULT_ACCOUNT_ID } from "../../routing/session-key.js";
-import { defaultRuntime } from "../../runtime.js";
+import { defaultRuntime, type RuntimeEnv } from "../../runtime.js";
+import { listChatChannels } from "../../channels/registry.js";
+import { listChannelPluginCatalogEntries } from "../../channels/plugins/catalog.js";
+import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../../agents/agent-scope.js";
+import { loadOpenClawPlugins } from "../../plugins/loader.js";
+import { discoverOpenClawPlugins } from "../../plugins/discovery.js";
+import { resolveBundledPluginsDir } from "../../plugins/bundled-dir.js";
 import {
   ErrorCodes,
   errorShape,
   formatValidationErrors,
   validateChannelsLogoutParams,
   validateChannelsStatusParams,
+  validateChannelsAddParams,
+  validateChannelsRemoveParams,
+  validateChannelsLoginParams,
+  validateChannelsListParams,
+  validateChannelsCapabilitiesParams,
+  validateChannelsResolveParams,
+  validateChannelsLogsParams,
 } from "../protocol/index.js";
 import { formatForLog } from "../ws-log.js";
 
@@ -66,7 +88,389 @@ export async function logoutChannelAccount(params: {
   };
 }
 
+const makeApiRuntime = (opts?: {
+  onLog?: (msg: string) => void;
+  onError?: (msg: string) => void;
+}): RuntimeEnv => ({
+  ...defaultRuntime,
+  log: (...args: Parameters<typeof console.log>) => {
+    const msg = args.map((entry) => String(entry)).join(" ");
+    opts?.onLog?.(msg);
+    defaultRuntime.log(...args);
+  },
+  error: (...args: Parameters<typeof console.error>) => {
+    const msg = args.map((entry) => String(entry)).join(" ");
+    opts?.onError?.(msg);
+    defaultRuntime.error(...args);
+  },
+  exit: (code) => {
+    throw new Error(`runtime.exit(${code})`);
+  },
+});
+
+const extractJsonFromLog = (raw: string) => {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const start = Math.min(
+    ...[trimmed.indexOf("{"), trimmed.indexOf("[")].filter((idx) => idx >= 0),
+  );
+  if (!Number.isFinite(start)) return null;
+  const payload = trimmed.slice(start);
+  return JSON.parse(payload);
+};
+
+async function runJsonCommand(run: (runtime: RuntimeEnv) => Promise<void>) {
+  let output = "";
+  let lastError = "";
+  await run(
+    makeApiRuntime({
+      onLog: (msg) => {
+        output += `${msg}\n`;
+      },
+      onError: (msg) => {
+        lastError = msg;
+      },
+    }),
+  );
+  const parsed = extractJsonFromLog(output);
+  if (parsed == null) {
+    throw new Error(lastError || "No JSON output");
+  }
+  return parsed;
+}
+
 export const channelsHandlers: GatewayRequestHandlers = {
+  "channels.add": async ({ params, respond }) => {
+    if (!validateChannelsAddParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "invalid channels.add params"),
+      );
+      return;
+    }
+    const channelInput = typeof (params as any)?.channel === "string" ? (params as any).channel.trim() : "";
+    const availableChannels = listChatChannels().map((entry) => entry.id);
+    if (!channelInput) {
+      respond(
+        false,
+        { availableChannels },
+        errorShape(ErrorCodes.INVALID_REQUEST, "channel is required"),
+      );
+      return;
+    }
+    let installedChannels = listChannelPlugins().map((plugin) => plugin.id);
+    let pluginDiagnostics: unknown[] | undefined;
+    let pluginDiscovery: { bundledDir?: string; candidates?: string[] } | undefined;
+    if (installedChannels.length === 0) {
+      try {
+        const cfg = loadConfig();
+        const workspaceDir = resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg));
+        const registry = loadOpenClawPlugins({ config: cfg, workspaceDir });
+        installedChannels = registry.channels.map((entry) => entry.plugin.id);
+        pluginDiagnostics = registry.diagnostics;
+        const discovery = discoverOpenClawPlugins({ workspaceDir });
+        pluginDiscovery = {
+          bundledDir: resolveBundledPluginsDir(),
+          candidates: discovery.candidates.map((c) => c.idHint),
+        };
+      } catch (err) {
+        pluginDiagnostics = [{ level: "error", message: String(err) }];
+        pluginDiscovery = { bundledDir: resolveBundledPluginsDir(), candidates: [] };
+      }
+    }
+    if (!installedChannels.includes(channelInput)) {
+      const cfg = loadConfig();
+      const workspaceDir = resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg));
+      const catalogChannels = listChannelPluginCatalogEntries({ workspaceDir }).map((entry) => entry.id);
+      if (pluginDiscovery?.candidates?.includes(channelInput)) {
+        const allow = Array.isArray(cfg.plugins?.allow) ? cfg.plugins?.allow : undefined;
+        const nextAllow = allow && !allow.includes(channelInput) ? [...allow, channelInput] : allow;
+        const nextConfig = {
+          ...cfg,
+          plugins: {
+            ...cfg.plugins,
+            ...(cfg.plugins?.enabled === false ? { enabled: true } : {}),
+            ...(nextAllow ? { allow: nextAllow } : {}),
+            entries: {
+              ...cfg.plugins?.entries,
+              [channelInput]: {
+                ...(cfg.plugins?.entries?.[channelInput] ?? {}),
+                enabled: true,
+              },
+            },
+          },
+        };
+        await writeConfigFile(nextConfig);
+        const registry = loadOpenClawPlugins({ config: nextConfig, workspaceDir });
+        installedChannels = registry.channels.map((entry) => entry.plugin.id);
+        pluginDiagnostics = registry.diagnostics;
+      }
+      if (!installedChannels.includes(channelInput)) {
+        respond(
+          false,
+          { availableChannels, installedChannels, catalogChannels, pluginDiagnostics, pluginDiscovery },
+          errorShape(ErrorCodes.INVALID_REQUEST, `channel plugin not installed: ${channelInput}`),
+        );
+        return;
+      }
+    }
+    let lastRuntimeError = "";
+    try {
+      await channelsAddCommand(params as any, makeApiRuntime((msg) => (lastRuntimeError = msg)), {
+        hasFlags: true,
+      });
+      respond(true, { ok: true, action: "channels.add" }, undefined);
+    } catch (err) {
+      const message = lastRuntimeError || String(err);
+      respond(
+        false,
+        { availableChannels, installedChannels },
+        errorShape(ErrorCodes.INVALID_REQUEST, message),
+      );
+    }
+  },
+  "channels.list": async ({ params, respond }) => {
+    if (!validateChannelsListParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "invalid channels.list params"),
+      );
+      return;
+    }
+    try {
+      const payload = await runJsonCommand((runtime) =>
+        channelsListCommand(
+          {
+            json: true,
+            usage: (params as any)?.usage !== false,
+          },
+          runtime,
+        ),
+      );
+      respond(true, payload, undefined);
+    } catch (err) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, String(err)));
+    }
+  },
+  "channels.capabilities": async ({ params, respond }) => {
+    if (!validateChannelsCapabilitiesParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "invalid channels.capabilities params"),
+      );
+      return;
+    }
+    try {
+      const timeoutMs = (params as any)?.timeoutMs;
+      const payload = await runJsonCommand((runtime) =>
+        channelsCapabilitiesCommand(
+          {
+            json: true,
+            channel: (params as any)?.channel,
+            account: (params as any)?.account,
+            target: (params as any)?.target,
+            timeout: typeof timeoutMs === "number" ? String(timeoutMs) : undefined,
+          },
+          runtime,
+        ),
+      );
+      respond(true, payload, undefined);
+    } catch (err) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, String(err)));
+    }
+  },
+  "channels.resolve": async ({ params, respond }) => {
+    if (!validateChannelsResolveParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "invalid channels.resolve params"),
+      );
+      return;
+    }
+    const channelInput = typeof (params as any)?.channel === "string" ? (params as any).channel.trim() : "";
+    const plugin = channelInput ? getChannelPlugin(channelInput) : undefined;
+    if (plugin && !plugin.resolver?.resolveTargets) {
+      respond(
+        false,
+        { channel: plugin.id, supported: false },
+        errorShape(ErrorCodes.INVALID_REQUEST, `Channel ${plugin.id} does not support resolve.`),
+      );
+      return;
+    }
+    try {
+      const payload = await runJsonCommand((runtime) =>
+        channelsResolveCommand(
+          {
+            json: true,
+            channel: (params as any)?.channel,
+            account: (params as any)?.account,
+            kind: (params as any)?.kind,
+            entries: (params as any)?.entries,
+          },
+          runtime,
+        ),
+      );
+      respond(true, payload, undefined);
+    } catch (err) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, String(err)));
+    }
+  },
+  "channels.logs": async ({ params, respond }) => {
+    if (!validateChannelsLogsParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "invalid channels.logs params"),
+      );
+      return;
+    }
+    try {
+      const payload = await runJsonCommand((runtime) =>
+        channelsLogsCommand(
+          {
+            json: true,
+            channel: (params as any)?.channel,
+            lines: (params as any)?.lines,
+          },
+          runtime,
+        ),
+      );
+      respond(true, payload, undefined);
+    } catch (err) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, String(err)));
+    }
+  },
+  "channels.remove": async ({ params, respond }) => {
+    if (!validateChannelsRemoveParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "invalid channels.remove params"),
+      );
+      return;
+    }
+    try {
+      await channelsRemoveCommand(params as any, makeApiRuntime(), { hasFlags: true });
+      respond(true, { ok: true, action: "channels.remove" }, undefined);
+    } catch (err) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, String(err)));
+    }
+  },
+  "channels.login": async ({ params, respond }) => {
+    if (!validateChannelsLoginParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "invalid channels.login params"),
+      );
+      return;
+    }
+    const channelInput = typeof (params as any)?.channel === "string" ? (params as any).channel.trim() : "";
+    const availableChannels = listChatChannels().map((entry) => entry.id);
+    if (!channelInput) {
+      respond(
+        false,
+        { availableChannels },
+        errorShape(ErrorCodes.INVALID_REQUEST, "channel is required"),
+      );
+      return;
+    }
+    let installedChannels = listChannelPlugins().map((plugin) => plugin.id);
+    let pluginDiagnostics: unknown[] | undefined;
+    let pluginDiscovery: { bundledDir?: string; candidates?: string[] } | undefined;
+    if (installedChannels.length === 0) {
+      try {
+        const cfg = loadConfig();
+        const workspaceDir = resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg));
+        const registry = loadOpenClawPlugins({ config: cfg, workspaceDir });
+        installedChannels = registry.channels.map((entry) => entry.plugin.id);
+        pluginDiagnostics = registry.diagnostics;
+        const discovery = discoverOpenClawPlugins({ workspaceDir });
+        pluginDiscovery = {
+          bundledDir: resolveBundledPluginsDir(),
+          candidates: discovery.candidates.map((c) => c.idHint),
+        };
+      } catch (err) {
+        pluginDiagnostics = [{ level: "error", message: String(err) }];
+        pluginDiscovery = { bundledDir: resolveBundledPluginsDir(), candidates: [] };
+      }
+    }
+    if (!installedChannels.includes(channelInput)) {
+      const cfg = loadConfig();
+      const workspaceDir = resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg));
+      const catalogChannels = listChannelPluginCatalogEntries({ workspaceDir }).map((entry) => entry.id);
+      if (pluginDiscovery?.candidates?.includes(channelInput)) {
+        const allow = Array.isArray(cfg.plugins?.allow) ? cfg.plugins?.allow : undefined;
+        const nextAllow = allow && !allow.includes(channelInput) ? [...allow, channelInput] : allow;
+        const nextConfig = {
+          ...cfg,
+          plugins: {
+            ...cfg.plugins,
+            ...(cfg.plugins?.enabled === false ? { enabled: true } : {}),
+            ...(nextAllow ? { allow: nextAllow } : {}),
+            entries: {
+              ...cfg.plugins?.entries,
+              [channelInput]: {
+                ...(cfg.plugins?.entries?.[channelInput] ?? {}),
+                enabled: true,
+              },
+            },
+          },
+        };
+        await writeConfigFile(nextConfig);
+        const registry = loadOpenClawPlugins({ config: nextConfig, workspaceDir });
+        installedChannels = registry.channels.map((entry) => entry.plugin.id);
+        pluginDiagnostics = registry.diagnostics;
+      }
+      if (!installedChannels.includes(channelInput)) {
+        respond(
+          false,
+          { availableChannels, installedChannels, catalogChannels, pluginDiagnostics, pluginDiscovery },
+          errorShape(ErrorCodes.INVALID_REQUEST, `channel plugin not installed: ${channelInput}`),
+        );
+        return;
+      }
+    }
+    try {
+      await runChannelLogin(params as any, makeApiRuntime());
+      respond(true, { ok: true, action: "channels.login" }, undefined);
+    } catch (err) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, String(err)));
+    }
+  },
+  "channels.logout": async ({ params, respond, context }) => {
+    if (!validateChannelsLogoutParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "invalid channels.logout params"),
+      );
+      return;
+    }
+    const channelId = normalizeChannelId((params as any).channel);
+    if (!channelId) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "invalid channel"));
+      return;
+    }
+    const plugin = getChannelPlugin(channelId);
+    if (!plugin) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "unknown channel"));
+      return;
+    }
+    const cfg = loadConfig();
+    const result = await logoutChannelAccount({
+      channelId,
+      accountId: (params as any).accountId,
+      cfg,
+      context,
+      plugin,
+    });
+    respond(true, { ok: true, action: "channels.logout", ...result }, undefined);
+  },
   "channels.status": async ({ params, respond, context }) => {
     if (!validateChannelsStatusParams(params)) {
       respond(
