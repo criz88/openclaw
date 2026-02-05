@@ -526,6 +526,7 @@ export const nodeHandlers: GatewayRequestHandlers = {
         refreshHealthSnapshot: context.refreshHealthSnapshot,
         loadGatewayModelCatalog: context.loadGatewayModelCatalog,
         logGateway: { warn: context.logGateway.warn },
+        nodeRegistry: context.nodeRegistry,
       };
       await handleNodeEvent(nodeContext, nodeId, {
         event: p.event,

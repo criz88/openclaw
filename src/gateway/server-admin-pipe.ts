@@ -137,6 +137,7 @@ export async function startGatewayAdminPipe(params: {
         modelIdentifier: n.modelIdentifier,
         caps: n.caps,
         commands: n.commands,
+        skills: n.skills,
         permissions: n.permissions,
         pathEnv: n.pathEnv,
         connectedAtMs: n.connectedAtMs,

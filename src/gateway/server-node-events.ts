@@ -171,6 +171,40 @@ export const handleNodeEvent = async (ctx: NodeEventContext, nodeId: string, evt
       ctx.nodeSubscribe(nodeId, sessionKey);
       return;
     }
+    case "skills.register": {
+      if (!evt.payloadJSON) {
+        return;
+      }
+      let payload: unknown;
+      try {
+        payload = JSON.parse(evt.payloadJSON) as unknown;
+      } catch {
+        return;
+      }
+      const obj =
+        typeof payload === "object" && payload !== null ? (payload as Record<string, unknown>) : {};
+      const skillsRaw = Array.isArray(obj.skills) ? obj.skills : [];
+      const skills = skillsRaw
+        .map((entry) => (typeof entry === "object" && entry !== null ? (entry as Record<string, unknown>) : null))
+        .filter(Boolean)
+        .map((entry) => ({
+          id: String((entry as Record<string, unknown>)?.id ?? "").trim(),
+          label: typeof (entry as Record<string, unknown>)?.label === "string" ? String((entry as Record<string, unknown>)?.label) : undefined,
+          description:
+            typeof (entry as Record<string, unknown>)?.description === "string"
+              ? String((entry as Record<string, unknown>)?.description)
+              : undefined,
+          command: String((entry as Record<string, unknown>)?.command ?? "").trim(),
+          params: (entry as Record<string, unknown>)?.params as unknown,
+        }))
+        .filter((entry) => entry.id && entry.command);
+      if (skills.length === 0) {
+        return;
+      }
+      ctx.nodeRegistry.setSkills(nodeId, skills);
+      ctx.broadcast("node.skills.updated", { nodeId, skills }, { dropIfSlow: true });
+      return;
+    }
     case "chat.unsubscribe": {
       if (!evt.payloadJSON) {
         return;

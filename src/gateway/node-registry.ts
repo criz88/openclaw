@@ -15,6 +15,7 @@ export type NodeSession = {
   remoteIp?: string;
   caps: string[];
   commands: string[];
+  skills?: Array<{ id: string; label?: string; description?: string; command: string; params?: unknown }>;
   permissions?: Record<string, boolean>;
   pathEnv?: string;
   connectedAtMs: number;
@@ -102,6 +103,13 @@ export class NodeRegistry {
 
   get(nodeId: string): NodeSession | undefined {
     return this.nodesById.get(nodeId);
+  }
+
+  setSkills(nodeId: string, skills: Array<{ id: string; label?: string; description?: string; command: string; params?: unknown }>) {
+    const node = this.nodesById.get(nodeId);
+    if (!node) return false;
+    node.skills = skills;
+    return true;
   }
 
   async invoke(params: {
