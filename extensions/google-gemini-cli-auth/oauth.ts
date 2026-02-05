@@ -205,13 +205,13 @@ function shouldUseManualOAuthFlow(isRemote: boolean): boolean {
   return isRemote || isWSL2();
 }
 
-function generatePkce(): { verifier: string; challenge: string } {
+export function generateGeminiPkce(): { verifier: string; challenge: string } {
   const verifier = randomBytes(32).toString("hex");
   const challenge = createHash("sha256").update(verifier).digest("base64url");
   return { verifier, challenge };
 }
 
-function buildAuthUrl(challenge: string, verifier: string): string {
+export function buildGeminiAuthUrl(challenge: string, verifier: string): string {
   const { clientId } = resolveOAuthClientConfig();
   const params = new URLSearchParams({
     client_id: clientId,
@@ -227,7 +227,7 @@ function buildAuthUrl(challenge: string, verifier: string): string {
   return `${AUTH_URL}?${params.toString()}`;
 }
 
-function parseCallbackInput(
+export function parseGeminiCallbackInput(
   input: string,
   expectedState: string,
 ): { code: string; state: string } | { error: string } {
@@ -348,7 +348,7 @@ async function waitForLocalCallback(params: {
   });
 }
 
-async function exchangeCodeForTokens(
+export async function exchangeGeminiCodeForTokens(
   code: string,
   verifier: string,
 ): Promise<GeminiCliOAuthCredentials> {
@@ -603,15 +603,15 @@ export async function loginGeminiCliOAuth(
     "Gemini CLI OAuth",
   );
 
-  const { verifier, challenge } = generatePkce();
-  const authUrl = buildAuthUrl(challenge, verifier);
+  const { verifier, challenge } = generateGeminiPkce();
+  const authUrl = buildGeminiAuthUrl(challenge, verifier);
 
   if (needsManual) {
     ctx.progress.update("OAuth URL ready");
     ctx.log(`\nOpen this URL in your LOCAL browser:\n\n${authUrl}\n`);
     ctx.progress.update("Waiting for you to paste the callback URL...");
     const callbackInput = await ctx.prompt("Paste the redirect URL here: ");
-    const parsed = parseCallbackInput(callbackInput, verifier);
+    const parsed = parseGeminiCallbackInput(callbackInput, verifier);
     if ("error" in parsed) {
       throw new Error(parsed.error);
     }
@@ -619,7 +619,7 @@ export async function loginGeminiCliOAuth(
       throw new Error("OAuth state mismatch - please try again");
     }
     ctx.progress.update("Exchanging authorization code for tokens...");
-    return exchangeCodeForTokens(parsed.code, verifier);
+    return exchangeGeminiCodeForTokens(parsed.code, verifier);
   }
 
   ctx.progress.update("Complete sign-in in browser...");
@@ -636,7 +636,7 @@ export async function loginGeminiCliOAuth(
       onProgress: (msg) => ctx.progress.update(msg),
     });
     ctx.progress.update("Exchanging authorization code for tokens...");
-    return await exchangeCodeForTokens(code, verifier);
+    return await exchangeGeminiCodeForTokens(code, verifier);
   } catch (err) {
     if (
       err instanceof Error &&
@@ -647,7 +647,7 @@ export async function loginGeminiCliOAuth(
       ctx.progress.update("Local callback server failed. Switching to manual mode...");
       ctx.log(`\nOpen this URL in your LOCAL browser:\n\n${authUrl}\n`);
       const callbackInput = await ctx.prompt("Paste the redirect URL here: ");
-      const parsed = parseCallbackInput(callbackInput, verifier);
+      const parsed = parseGeminiCallbackInput(callbackInput, verifier);
       if ("error" in parsed) {
         throw new Error(parsed.error, { cause: err });
       }
@@ -655,7 +655,7 @@ export async function loginGeminiCliOAuth(
         throw new Error("OAuth state mismatch - please try again", { cause: err });
       }
       ctx.progress.update("Exchanging authorization code for tokens...");
-      return exchangeCodeForTokens(parsed.code, verifier);
+      return exchangeGeminiCodeForTokens(parsed.code, verifier);
     }
     throw err;
   }

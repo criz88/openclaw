@@ -55,14 +55,14 @@ function toFormUrlEncoded(data: Record<string, string>): string {
     .join("&");
 }
 
-function generatePkce(): { verifier: string; challenge: string; state: string } {
+export function generateMiniMaxPkce(): { verifier: string; challenge: string; state: string } {
   const verifier = randomBytes(32).toString("base64url");
   const challenge = createHash("sha256").update(verifier).digest("base64url");
   const state = randomBytes(16).toString("base64url");
   return { verifier, challenge, state };
 }
 
-async function requestOAuthCode(params: {
+export async function requestMiniMaxOAuthCode(params: {
   challenge: string;
   state: string;
   region: MiniMaxRegion;
@@ -103,7 +103,7 @@ async function requestOAuthCode(params: {
   return payload;
 }
 
-async function pollOAuthToken(params: {
+export async function pollMiniMaxOAuthToken(params: {
   userCode: string;
   verifier: string;
   region: MiniMaxRegion;
@@ -191,8 +191,8 @@ export async function loginMiniMaxPortalOAuth(params: {
   region?: MiniMaxRegion;
 }): Promise<MiniMaxOAuthToken> {
   const region = params.region ?? "global";
-  const { verifier, challenge, state } = generatePkce();
-  const oauth = await requestOAuthCode({ challenge, state, region });
+  const { verifier, challenge, state } = generateMiniMaxPkce();
+  const oauth = await requestMiniMaxOAuthCode({ challenge, state, region });
   const verificationUrl = oauth.verification_uri;
 
   const noteLines = [
@@ -213,7 +213,7 @@ export async function loginMiniMaxPortalOAuth(params: {
 
   while (Date.now() < expireTimeMs) {
     params.progress.update("Waiting for MiniMax OAuth approval…");
-    const result = await pollOAuthToken({
+    const result = await pollMiniMaxOAuthToken({
       userCode: oauth.user_code,
       verifier,
       region,

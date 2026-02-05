@@ -42,7 +42,7 @@ const RESPONSE_PAGE = `<!DOCTYPE html>
   </body>
 </html>`;
 
-function generatePkce(): { verifier: string; challenge: string } {
+export function generateAntigravityPkce(): { verifier: string; challenge: string } {
   const verifier = randomBytes(32).toString("hex");
   const challenge = createHash("sha256").update(verifier).digest("base64url");
   return { verifier, challenge };
@@ -76,7 +76,7 @@ function shouldUseManualOAuthFlow(isRemote: boolean): boolean {
   return isRemote || isWSL2();
 }
 
-function buildAuthUrl(params: { challenge: string; state: string }): string {
+export function buildAntigravityAuthUrl(params: { challenge: string; state: string }): string {
   const url = new URL(AUTH_URL);
   url.searchParams.set("client_id", CLIENT_ID);
   url.searchParams.set("response_type", "code");
@@ -90,7 +90,7 @@ function buildAuthUrl(params: { challenge: string; state: string }): string {
   return url.toString();
 }
 
-function parseCallbackInput(input: string): { code: string; state: string } | { error: string } {
+export function parseAntigravityCallbackInput(input: string): { code: string; state: string } | { error: string } {
   const trimmed = input.trim();
   if (!trimmed) {
     return { error: "No input provided" };
@@ -186,7 +186,7 @@ async function startCallbackServer(params: { timeoutMs: number }) {
   };
 }
 
-async function exchangeCode(params: {
+export async function exchangeAntigravityCode(params: {
   code: string;
   verifier: string;
 }): Promise<{ access: string; refresh: string; expires: number }> {
@@ -229,7 +229,7 @@ async function exchangeCode(params: {
   return { access, refresh, expires };
 }
 
-async function fetchUserEmail(accessToken: string): Promise<string | undefined> {
+export async function fetchAntigravityUserEmail(accessToken: string): Promise<string | undefined> {
   try {
     const response = await fetch("https://www.googleapis.com/oauth2/v1/userinfo?alt=json", {
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -244,7 +244,7 @@ async function fetchUserEmail(accessToken: string): Promise<string | undefined> 
   }
 }
 
-async function fetchProjectId(accessToken: string): Promise<string> {
+export async function fetchAntigravityProjectId(accessToken: string): Promise<string> {
   const headers = {
     Authorization: `Bearer ${accessToken}`,
     "Content-Type": "application/json",
@@ -310,9 +310,9 @@ async function loginAntigravity(params: {
   email?: string;
   projectId: string;
 }> {
-  const { verifier, challenge } = generatePkce();
+  const { verifier, challenge } = generateAntigravityPkce();
   const state = randomBytes(16).toString("hex");
-  const authUrl = buildAuthUrl({ challenge, state });
+  const authUrl = buildAntigravityAuthUrl({ challenge, state });
 
   let callbackServer: Awaited<ReturnType<typeof startCallbackServer>> | null = null;
   const needsManual = shouldUseManualOAuthFlow(params.isRemote);
@@ -379,9 +379,9 @@ async function loginAntigravity(params: {
   }
 
   params.progress.update("Exchanging code for tokens…");
-  const tokens = await exchangeCode({ code, verifier });
-  const email = await fetchUserEmail(tokens.access);
-  const projectId = await fetchProjectId(tokens.access);
+  const tokens = await exchangeAntigravityCode({ code, verifier });
+  const email = await fetchAntigravityUserEmail(tokens.access);
+  const projectId = await fetchAntigravityProjectId(tokens.access);
 
   params.progress.stop("Antigravity OAuth complete");
   return { ...tokens, email, projectId };
