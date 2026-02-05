@@ -1,5 +1,7 @@
 import type { OpenClawConfig } from "../../config/config.js";
 import type { GatewayRequestHandlers } from "./types.js";
+import fs from "node:fs";
+import path from "node:path";
 import {
   listAgentIds,
   resolveAgentWorkspaceDir,
@@ -8,16 +10,21 @@ import {
 import { installSkill } from "../../agents/skills-install.js";
 import { buildWorkspaceSkillStatus } from "../../agents/skills-status.js";
 import { loadWorkspaceSkillEntries, type SkillEntry } from "../../agents/skills.js";
+import { resolveSkillKey } from "../../agents/skills/frontmatter.js";
+import { resolveSkillConfig } from "../../agents/skills/config.js";
 import { loadConfig, writeConfigFile } from "../../config/config.js";
 import { getRemoteSkillEligibility } from "../../infra/skills-remote.js";
 import { normalizeAgentId } from "../../routing/session-key.js";
+import { CONFIG_DIR } from "../../utils.js";
 import {
   ErrorCodes,
   errorShape,
   formatValidationErrors,
   validateSkillsBinsParams,
   validateSkillsInstallParams,
+  validateSkillsListParams,
   validateSkillsStatusParams,
+  validateSkillsUninstallParams,
   validateSkillsUpdateParams,
 } from "../protocol/index.js";
 
@@ -66,7 +73,60 @@ function collectSkillBins(entries: SkillEntry[]): string[] {
   return [...bins].toSorted();
 }
 
+function buildSkillList(entries: SkillEntry[], cfg: OpenClawConfig) {
+  return entries
+    .map((entry) => {
+      const skillKey = resolveSkillKey(entry.skill, entry);
+      const skillConfig = resolveSkillConfig(cfg, skillKey);
+      const enabled = skillConfig?.enabled !== false;
+      const versionRaw =
+        typeof (entry.frontmatter as Record<string, unknown>)?.version === "string"
+          ? String((entry.frontmatter as Record<string, unknown>).version)
+          : undefined;
+      return {
+        id: skillKey,
+        name: entry.skill.name,
+        description: entry.skill.description || entry.frontmatter.description,
+        version: versionRaw,
+        icon: entry.metadata?.emoji,
+        enabled,
+        source: entry.skill.source,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export const skillsHandlers: GatewayRequestHandlers = {
+  "skills.list": ({ params, respond }) => {
+    if (!validateSkillsListParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `invalid skills.list params: ${formatValidationErrors(validateSkillsListParams.errors)}`,
+        ),
+      );
+      return;
+    }
+    const cfg = loadConfig();
+    const agentIdRaw = typeof params?.agentId === "string" ? params.agentId.trim() : "";
+    const agentId = agentIdRaw ? normalizeAgentId(agentIdRaw) : resolveDefaultAgentId(cfg);
+    if (agentIdRaw) {
+      const knownAgents = listAgentIds(cfg);
+      if (!knownAgents.includes(agentId)) {
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.INVALID_REQUEST, `unknown agent id "${agentIdRaw}"`),
+        );
+        return;
+      }
+    }
+    const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
+    const entries = loadWorkspaceSkillEntries(workspaceDir, { config: cfg });
+    respond(true, { skills: buildSkillList(entries, cfg) }, undefined);
+  },
   "skills.status": ({ params, respond }) => {
     if (!validateSkillsStatusParams(params)) {
       respond(
@@ -212,5 +272,49 @@ export const skillsHandlers: GatewayRequestHandlers = {
     };
     await writeConfigFile(nextConfig);
     respond(true, { ok: true, skillKey: p.skillKey, config: current }, undefined);
+  },
+  "skills.uninstall": async ({ params, respond }) => {
+    if (!validateSkillsUninstallParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `invalid skills.uninstall params: ${formatValidationErrors(validateSkillsUninstallParams.errors)}`,
+        ),
+      );
+      return;
+    }
+    const p = params as { id: string };
+    const cfg = loadConfig();
+    const managedDir = path.resolve(CONFIG_DIR, "skills");
+    const entries = loadWorkspaceSkillEntries(resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg)), {
+      config: cfg,
+    });
+    const target = entries.find((entry) => resolveSkillKey(entry.skill, entry) === p.id);
+    if (!target) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "unknown skill id"));
+      return;
+    }
+    if (target.skill.source !== "openclaw-managed") {
+      respond(
+        false,
+        { id: p.id, source: target.skill.source },
+        errorShape(ErrorCodes.INVALID_REQUEST, "skill cannot be uninstalled"),
+      );
+      return;
+    }
+    const skillPath = path.resolve(target.skill.baseDir);
+    const managedPrefix = managedDir.endsWith(path.sep) ? managedDir : `${managedDir}${path.sep}`;
+    if (!(skillPath === managedDir || skillPath.startsWith(managedPrefix))) {
+      respond(
+        false,
+        { id: p.id, path: skillPath },
+        errorShape(ErrorCodes.INVALID_REQUEST, "skill is not in managed directory"),
+      );
+      return;
+    }
+    await fs.promises.rm(skillPath, { recursive: true, force: true });
+    respond(true, { ok: true, id: p.id, path: skillPath }, undefined);
   },
 };

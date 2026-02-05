@@ -65,11 +65,13 @@ const READ_METHODS = new Set([
   "channels.login",
   "channels.logout",
   "status",
+  "overview.summary",
   "usage.status",
   "usage.cost",
   "tts.status",
   "tts.providers",
   "models.list",
+  "models.test",
   "tools.list",
   "oauth.qwen.start",
   "oauth.qwen.poll",
@@ -85,6 +87,8 @@ const READ_METHODS = new Set([
   "agents.list",
   "agent.identity.get",
   "skills.status",
+  "skills.list",
+  "skills.bins",
   "voicewake.get",
   "sessions.list",
   "sessions.preview",
@@ -170,6 +174,7 @@ function authorizeGatewayMethod(method: string, client: GatewayRequestOptions["c
     method === "channels.logout" ||
     method === "skills.install" ||
     method === "skills.update" ||
+    method === "skills.uninstall" ||
     method === "cron.add" ||
     method === "cron.update" ||
     method === "cron.remove" ||

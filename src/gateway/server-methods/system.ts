@@ -4,9 +4,39 @@ import { getLastHeartbeatEvent } from "../../infra/heartbeat-events.js";
 import { setHeartbeatsEnabled } from "../../infra/heartbeat-runner.js";
 import { enqueueSystemEvent, isSystemEventContextChanged } from "../../infra/system-events.js";
 import { listSystemPresence, updateSystemPresence } from "../../infra/system-presence.js";
-import { ErrorCodes, errorShape } from "../protocol/index.js";
+import { loadProviderUsageSummary } from "../../infra/provider-usage.js";
+import { getStatusSummary } from "../../commands/status.js";
+import { ErrorCodes, errorShape, validateOverviewSummaryParams } from "../protocol/index.js";
 
 export const systemHandlers: GatewayRequestHandlers = {
+  "overview.summary": async ({ params, respond, context }) => {
+    if (!validateOverviewSummaryParams(params)) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "invalid overview.summary params"));
+      return;
+    }
+    const [status, usage, cronStatus, cronJobs] = await Promise.all([
+      getStatusSummary(),
+      loadProviderUsageSummary(),
+      context.cron.status(),
+      context.cron.list({ includeDisabled: true }),
+    ]);
+    const jobs = cronJobs ?? [];
+    const disabled = jobs.filter((job) => job.enabled === false).length;
+    respond(
+      true,
+      {
+        ts: Date.now(),
+        status,
+        usage,
+        cron: {
+          status: cronStatus,
+          jobs: jobs.length,
+          disabled,
+        },
+      },
+      undefined,
+    );
+  },
   "last-heartbeat": ({ respond }) => {
     respond(true, getLastHeartbeatEvent(), undefined);
   },

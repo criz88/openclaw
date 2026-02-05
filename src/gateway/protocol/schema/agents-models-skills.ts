@@ -110,6 +110,41 @@ export const AgentsFilesSetResultSchema = Type.Object(
 
 export const ModelsListParamsSchema = Type.Object({}, { additionalProperties: false });
 
+export const ModelsTestParamsSchema = Type.Object(
+  {
+    model: Type.Optional(NonEmptyString),
+    provider: Type.Optional(NonEmptyString),
+    timeoutMs: Type.Optional(Type.Integer({ minimum: 1000 })),
+    maxTokens: Type.Optional(Type.Integer({ minimum: 1 })),
+  },
+  { additionalProperties: false },
+);
+
+export const ModelsTestResultSchema = Type.Object(
+  {
+    ok: Type.Boolean(),
+    summary: Type.Optional(Type.String()),
+    durationMs: Type.Optional(Type.Integer({ minimum: 0 })),
+    results: Type.Array(
+      Type.Object(
+        {
+          provider: NonEmptyString,
+          model: Type.Optional(NonEmptyString),
+          status: NonEmptyString,
+          error: Type.Optional(Type.String()),
+          latencyMs: Type.Optional(Type.Integer({ minimum: 0 })),
+          profileId: Type.Optional(Type.String()),
+          label: Type.Optional(Type.String()),
+          source: Type.Optional(Type.String()),
+          mode: Type.Optional(Type.String()),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+  },
+  { additionalProperties: false },
+);
+
 export const ToolsListParamsSchema = Type.Object({}, { additionalProperties: false });
 
 export const ToolsListResultSchema = Type.Object({
@@ -141,6 +176,33 @@ export const SkillsStatusParamsSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const SkillsListParamsSchema = Type.Object(
+  {
+    agentId: Type.Optional(NonEmptyString),
+  },
+  { additionalProperties: false },
+);
+
+export const SkillListItemSchema = Type.Object(
+  {
+    id: NonEmptyString,
+    name: NonEmptyString,
+    version: Type.Optional(NonEmptyString),
+    description: Type.Optional(Type.String()),
+    icon: Type.Optional(Type.String()),
+    enabled: Type.Boolean(),
+    source: Type.Optional(Type.String()),
+  },
+  { additionalProperties: false },
+);
+
+export const SkillsListResultSchema = Type.Object(
+  {
+    skills: Type.Array(SkillListItemSchema),
+  },
+  { additionalProperties: false },
+);
+
 export const SkillsBinsParamsSchema = Type.Object({}, { additionalProperties: false });
 
 export const SkillsBinsResultSchema = Type.Object(
@@ -155,6 +217,13 @@ export const SkillsInstallParamsSchema = Type.Object(
     name: NonEmptyString,
     installId: NonEmptyString,
     timeoutMs: Type.Optional(Type.Integer({ minimum: 1000 })),
+  },
+  { additionalProperties: false },
+);
+
+export const SkillsUninstallParamsSchema = Type.Object(
+  {
+    id: NonEmptyString,
   },
   { additionalProperties: false },
 );

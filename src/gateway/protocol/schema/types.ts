@@ -20,6 +20,8 @@ import type {
   AgentsListResultSchema,
   ModelChoiceSchema,
   ModelsListParamsSchema,
+  ModelsTestParamsSchema,
+  ModelsTestResultSchema,
   ToolsListParamsSchema,
   ToolsListResultSchema,
   ModelsListResultSchema,
@@ -27,7 +29,11 @@ import type {
   SkillsBinsResultSchema,
   SkillsInstallParamsSchema,
   SkillsStatusParamsSchema,
+  SkillsListParamsSchema,
+  SkillsListResultSchema,
+  SkillsUninstallParamsSchema,
   SkillsUpdateParamsSchema,
+  SkillListItemSchema,
 } from "./agents-models-skills.js";
 import type {
   ChannelsLogoutParamsSchema,
@@ -124,6 +130,10 @@ import type {
 } from "./sessions.js";
 import type { PresenceEntrySchema, SnapshotSchema, StateVersionSchema } from "./snapshot.js";
 import type {
+  OverviewSummaryParamsSchema,
+  OverviewSummaryResultSchema,
+} from "./overview.js";
+import type {
   WizardCancelParamsSchema,
   WizardNextParamsSchema,
   WizardNextResultSchema,
@@ -207,15 +217,23 @@ export type AgentsFilesSetParams = Static<typeof AgentsFilesSetParamsSchema>;
 export type AgentsFilesSetResult = Static<typeof AgentsFilesSetResultSchema>;
 export type AgentsListParams = Static<typeof AgentsListParamsSchema>;
 export type AgentsListResult = Static<typeof AgentsListResultSchema>;
+export type OverviewSummaryParams = Static<typeof OverviewSummaryParamsSchema>;
+export type OverviewSummaryResult = Static<typeof OverviewSummaryResultSchema>;
 export type ModelChoice = Static<typeof ModelChoiceSchema>;
 export type ModelsListParams = Static<typeof ModelsListParamsSchema>;
+export type ModelsTestParams = Static<typeof ModelsTestParamsSchema>;
+export type ModelsTestResult = Static<typeof ModelsTestResultSchema>;
 export type ToolsListParams = Static<typeof ToolsListParamsSchema>;
 export type ToolsListResult = Static<typeof ToolsListResultSchema>;
 export type ModelsListResult = Static<typeof ModelsListResultSchema>;
+export type SkillListItem = Static<typeof SkillListItemSchema>;
 export type SkillsStatusParams = Static<typeof SkillsStatusParamsSchema>;
+export type SkillsListParams = Static<typeof SkillsListParamsSchema>;
+export type SkillsListResult = Static<typeof SkillsListResultSchema>;
 export type SkillsBinsParams = Static<typeof SkillsBinsParamsSchema>;
 export type SkillsBinsResult = Static<typeof SkillsBinsResultSchema>;
 export type SkillsInstallParams = Static<typeof SkillsInstallParamsSchema>;
+export type SkillsUninstallParams = Static<typeof SkillsUninstallParamsSchema>;
 export type SkillsUpdateParams = Static<typeof SkillsUpdateParamsSchema>;
 export type CronJob = Static<typeof CronJobSchema>;
 export type CronListParams = Static<typeof CronListParamsSchema>;

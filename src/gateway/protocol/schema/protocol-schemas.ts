@@ -22,6 +22,8 @@ import {
   AgentsListResultSchema,
   ModelChoiceSchema,
   ModelsListParamsSchema,
+  ModelsTestParamsSchema,
+  ModelsTestResultSchema,
   ModelsListResultSchema,
   ToolsListParamsSchema,
   ToolsListResultSchema,
@@ -29,6 +31,9 @@ import {
   SkillsBinsResultSchema,
   SkillsInstallParamsSchema,
   SkillsStatusParamsSchema,
+  SkillsListParamsSchema,
+  SkillsListResultSchema,
+  SkillsUninstallParamsSchema,
   SkillsUpdateParamsSchema,
 } from "./agents-models-skills.js";
 import {
@@ -131,6 +136,10 @@ import {
 } from "./sessions.js";
 import { PresenceEntrySchema, SnapshotSchema, StateVersionSchema } from "./snapshot.js";
 import {
+  OverviewSummaryParamsSchema,
+  OverviewSummaryResultSchema,
+} from "./overview.js";
+import {
   WizardCancelParamsSchema,
   WizardNextParamsSchema,
   WizardNextResultSchema,
@@ -219,14 +228,21 @@ export const ProtocolSchemas: Record<string, TSchema> = {
   AgentsListParams: AgentsListParamsSchema,
   AgentsListResult: AgentsListResultSchema,
   ModelChoice: ModelChoiceSchema,
+  OverviewSummaryParams: OverviewSummaryParamsSchema,
+  OverviewSummaryResult: OverviewSummaryResultSchema,
   ModelsListParams: ModelsListParamsSchema,
+  ModelsTestParams: ModelsTestParamsSchema,
+  ModelsTestResult: ModelsTestResultSchema,
   ToolsListParams: ToolsListParamsSchema,
   ToolsListResult: ToolsListResultSchema,
   ModelsListResult: ModelsListResultSchema,
   SkillsStatusParams: SkillsStatusParamsSchema,
+  SkillsListParams: SkillsListParamsSchema,
+  SkillsListResult: SkillsListResultSchema,
   SkillsBinsParams: SkillsBinsParamsSchema,
   SkillsBinsResult: SkillsBinsResultSchema,
   SkillsInstallParams: SkillsInstallParamsSchema,
+  SkillsUninstallParams: SkillsUninstallParamsSchema,
   SkillsUpdateParams: SkillsUpdateParamsSchema,
   CronJob: CronJobSchema,
   CronListParams: CronListParamsSchema,
