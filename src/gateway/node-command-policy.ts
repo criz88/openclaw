@@ -29,6 +29,12 @@ const SYSTEM_COMMANDS = [
   "browser.proxy",
 ];
 
+const INPUT_COMMANDS = [
+  "input.mouse.move",
+  "input.mouse.click",
+  "input.keyboard.type",
+];
+
 const PLATFORM_DEFAULTS: Record<string, string[]> = {
   ios: [...CANVAS_COMMANDS, ...CAMERA_COMMANDS, ...SCREEN_COMMANDS, ...LOCATION_COMMANDS],
   android: [
@@ -46,7 +52,7 @@ const PLATFORM_DEFAULTS: Record<string, string[]> = {
     ...SYSTEM_COMMANDS,
   ],
   linux: [...SYSTEM_COMMANDS],
-  windows: [...SYSTEM_COMMANDS],
+  windows: [...SYSTEM_COMMANDS, ...INPUT_COMMANDS],
   unknown: [
     ...CANVAS_COMMANDS,
     ...CAMERA_COMMANDS,
