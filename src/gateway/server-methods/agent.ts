@@ -41,6 +41,29 @@ import { formatForLog } from "../ws-log.js";
 import { waitForAgentJob } from "./agent-job.js";
 import { injectTimestamp, timestampOptsFromConfig } from "./agent-timestamp.js";
 
+const buildNodeSkillsPrompt = (context: { nodeRegistry: { listConnected: () => Array<{ nodeId: string; displayName?: string; skills?: Array<{ id: string; label?: string; description?: string; command: string; params?: unknown }> }> } }) => {
+  const nodes = context.nodeRegistry.listConnected();
+  const withSkills = nodes
+    .map((node) => ({
+      nodeId: node.nodeId,
+      name: node.displayName || node.nodeId,
+      skills: node.skills ?? [],
+    }))
+    .filter((node) => node.skills.length > 0);
+  if (withSkills.length === 0) return "";
+  const lines: string[] = ["Available node skills:"];
+  for (const node of withSkills) {
+    lines.push(`- ${node.name} (${node.nodeId})`);
+    for (const skill of node.skills) {
+      const label = skill.label || skill.id;
+      const desc = skill.description ? ` — ${skill.description}` : "";
+      lines.push(`  - ${label} (command: ${skill.command})${desc}`);
+    }
+  }
+  lines.push("Use node.invoke with the command + params shown above to call these skills.");
+  return lines.join("\n");
+};
+
 export const agentHandlers: GatewayRequestHandlers = {
   agent: async ({ params, respond, context }) => {
     const p = params;
@@ -85,6 +108,13 @@ export const agentHandlers: GatewayRequestHandlers = {
       label?: string;
       spawnedBy?: string;
     };
+    const nodeSkillsPrompt = buildNodeSkillsPrompt(context);
+    if (nodeSkillsPrompt) {
+      const existing = request.extraSystemPrompt?.trim();
+      request.extraSystemPrompt = existing
+        ? `${existing}\n\n${nodeSkillsPrompt}`
+        : nodeSkillsPrompt;
+    }
     const cfg = loadConfig();
     const idem = request.idempotencyKey;
     const groupIdRaw = typeof request.groupId === "string" ? request.groupId.trim() : "";
