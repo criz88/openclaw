@@ -12,6 +12,7 @@ import { createReplyDispatcher } from "../../auto-reply/reply/reply-dispatcher.j
 import { createReplyPrefixOptions } from "../../channels/reply-prefix.js";
 import { resolveSendPolicy } from "../../sessions/send-policy.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../../utils/message-channel.js";
+import { listTools } from "./tools.js";
 import {
   abortChatRunById,
   abortChatRunsForSessionKey,
@@ -450,6 +451,23 @@ export const chatHandlers: GatewayRequestHandlers = {
       // See: https://github.com/moltbot/moltbot/issues/3658
       const stampedMessage = injectTimestamp(parsedMessage, timestampOptsFromConfig(cfg));
 
+      const tools = listTools(context);
+      const policyPrompt =
+        "When describing available tools or actions, ONLY use the tools.list data below. Do not list any internal/system tools.";
+      const toolsPrompt = tools.length
+        ? [
+            "Available actions (tools.list):",
+            ...tools.map((tool) => {
+              const label = tool.label || tool.id;
+              const desc = tool.description ? ` — ${tool.description}` : "";
+              const node = tool.nodeName ? ` @ ${tool.nodeName}` : "";
+              return `- ${label}${node} (command: ${tool.command})${desc}`;
+            }),
+            "Use node.invoke with the command + params shown above to call these actions.",
+          ].join("\n")
+        : "";
+      const groupSystemPrompt = toolsPrompt ? `${policyPrompt}\n\n${toolsPrompt}` : policyPrompt;
+
       const ctx: MsgContext = {
         Body: parsedMessage,
         BodyForAgent: stampedMessage,
@@ -467,6 +485,7 @@ export const chatHandlers: GatewayRequestHandlers = {
         SenderName: clientInfo?.displayName,
         SenderUsername: clientInfo?.displayName,
         GatewayClientScopes: client?.connect?.scopes,
+        GroupSystemPrompt: groupSystemPrompt,
       };
 
       const agentId = resolveSessionAgentId({
