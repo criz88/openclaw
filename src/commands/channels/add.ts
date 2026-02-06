@@ -46,11 +46,25 @@ export type ChannelsAddOptions = {
   ship?: string;
   url?: string;
   code?: string;
+  selfChatMode?: boolean;
   groupChannels?: string;
   dmAllowlist?: string;
   dmPolicy?: string;
+  groupPolicy?: string;
   allowFrom?: string;
   autoDiscoverChannels?: boolean;
+  baseUrl?: string;
+  secret?: string;
+  secretFile?: string;
+  webhookSecret?: string;
+  profile?: string;
+  appId?: string;
+  appSecret?: string;
+  appSecretFile?: string;
+  domain?: string;
+  channelAccessToken?: string;
+  channelSecret?: string;
+  [key: string]: unknown;
 };
 
 function parseList(value: string | undefined): string[] | undefined {
@@ -194,43 +208,122 @@ export async function channelsAddCommand(
   const groupChannels = parseList(opts.groupChannels);
   const dmAllowlist = parseList(opts.dmAllowlist);
   const allowFrom = parseList(opts.allowFrom);
+  const reservedInputKeys = new Set<string>([
+    "channel",
+    "account",
+    "name",
+    "token",
+    "tokenFile",
+    "botToken",
+    "appToken",
+    "signalNumber",
+    "cliPath",
+    "dbPath",
+    "service",
+    "region",
+    "authDir",
+    "httpUrl",
+    "httpHost",
+    "httpPort",
+    "webhookPath",
+    "webhookUrl",
+    "audienceType",
+    "audience",
+    "useEnv",
+    "homeserver",
+    "userId",
+    "accessToken",
+    "password",
+    "deviceName",
+    "initialSyncLimit",
+    "ship",
+    "url",
+    "code",
+    "selfChatMode",
+    "groupChannels",
+    "dmAllowlist",
+    "dmPolicy",
+    "groupPolicy",
+    "allowFrom",
+    "autoDiscoverChannels",
+    "baseUrl",
+    "secret",
+    "secretFile",
+    "webhookSecret",
+    "profile",
+    "appId",
+    "appSecret",
+    "appSecretFile",
+    "domain",
+    "channelAccessToken",
+    "channelSecret",
+  ]);
+  const extraInput = Object.fromEntries(
+    Object.entries(opts).filter(([key, value]) => {
+      if (reservedInputKeys.has(key)) {
+        return false;
+      }
+      if (value === undefined || value === null) {
+        return false;
+      }
+      if (typeof value === "string" && value.trim().length === 0) {
+        return false;
+      }
+      return true;
+    }),
+  );
+  const setupInput = {
+    name: opts.name,
+    token: opts.token,
+    tokenFile: opts.tokenFile,
+    botToken: opts.botToken,
+    appToken: opts.appToken,
+    signalNumber: opts.signalNumber,
+    cliPath: opts.cliPath,
+    dbPath: opts.dbPath,
+    service: opts.service,
+    region: opts.region,
+    authDir: opts.authDir,
+    httpUrl: opts.httpUrl,
+    httpHost: opts.httpHost,
+    httpPort: opts.httpPort,
+    webhookPath: opts.webhookPath,
+    webhookUrl: opts.webhookUrl,
+    audienceType: opts.audienceType,
+    audience: opts.audience,
+    homeserver: opts.homeserver,
+    userId: opts.userId,
+    accessToken: opts.accessToken,
+    password: opts.password,
+    deviceName: opts.deviceName,
+    initialSyncLimit,
+    useEnv,
+    ship: opts.ship,
+    url: opts.url,
+    code: opts.code,
+    selfChatMode: opts.selfChatMode,
+    groupChannels,
+    dmAllowlist,
+    groupPolicy: opts.groupPolicy,
+    autoDiscoverChannels: opts.autoDiscoverChannels,
+    baseUrl: opts.baseUrl,
+    secret: opts.secret,
+    secretFile: opts.secretFile,
+    webhookSecret: opts.webhookSecret,
+    profile: opts.profile,
+    appId: opts.appId,
+    appSecret: opts.appSecret,
+    appSecretFile: opts.appSecretFile,
+    domain: opts.domain,
+    channelAccessToken: opts.channelAccessToken,
+    channelSecret: opts.channelSecret,
+    ...extraInput,
+  };
 
   const validationError = plugin.setup.validateInput?.({
     cfg: nextConfig,
     accountId,
-    input: {
-      name: opts.name,
-      token: opts.token,
-      tokenFile: opts.tokenFile,
-      botToken: opts.botToken,
-      appToken: opts.appToken,
-      signalNumber: opts.signalNumber,
-      cliPath: opts.cliPath,
-      dbPath: opts.dbPath,
-      service: opts.service,
-      region: opts.region,
-      authDir: opts.authDir,
-      httpUrl: opts.httpUrl,
-      httpHost: opts.httpHost,
-      httpPort: opts.httpPort,
-      webhookPath: opts.webhookPath,
-      webhookUrl: opts.webhookUrl,
-      audienceType: opts.audienceType,
-      audience: opts.audience,
-      homeserver: opts.homeserver,
-      userId: opts.userId,
-      accessToken: opts.accessToken,
-      password: opts.password,
-      deviceName: opts.deviceName,
-      initialSyncLimit,
-      useEnv,
-      ship: opts.ship,
-      url: opts.url,
-      code: opts.code,
-      groupChannels,
-      dmAllowlist,
-      autoDiscoverChannels: opts.autoDiscoverChannels,
-    },
+    input: setupInput,
   });
   if (validationError) {
     runtime.error(validationError);
@@ -270,9 +363,12 @@ export async function channelsAddCommand(
     ship: opts.ship,
     url: opts.url,
     code: opts.code,
+    selfChatMode: opts.selfChatMode,
     groupChannels,
     dmAllowlist,
+    groupPolicy: opts.groupPolicy,
     autoDiscoverChannels: opts.autoDiscoverChannels,
+    extraInput,
   });
 
   if (opts.dmPolicy || allowFrom) {
@@ -306,6 +402,66 @@ export async function channelsAddCommand(
         },
       } as typeof nextConfig;
     }
+  }
+
+  if (opts.groupPolicy?.trim()) {
+    const groupPolicy = opts.groupPolicy.trim();
+    const accountKey = accountId || DEFAULT_ACCOUNT_ID;
+    if (channel === "discord" || channel === "slack") {
+      if (accountKey === DEFAULT_ACCOUNT_ID) {
+        nextConfig = {
+          ...nextConfig,
+          channels: {
+            ...nextConfig.channels,
+            [channel]: {
+              ...(nextConfig.channels as any)?.[channel],
+              groupPolicy,
+            },
+          },
+        } as typeof nextConfig;
+      } else {
+        nextConfig = {
+          ...nextConfig,
+          channels: {
+            ...nextConfig.channels,
+            [channel]: {
+              ...(nextConfig.channels as any)?.[channel],
+              accounts: {
+                ...((nextConfig.channels as any)?.[channel]?.accounts ?? {}),
+                [accountKey]: {
+                  ...((nextConfig.channels as any)?.[channel]?.accounts?.[accountKey] ?? {}),
+                  groupPolicy,
+                },
+              },
+            },
+          },
+        } as typeof nextConfig;
+      }
+    } else {
+      nextConfig = {
+        ...nextConfig,
+        channels: {
+          ...nextConfig.channels,
+          [channel]: {
+            ...(nextConfig.channels as any)?.[channel],
+            groupPolicy,
+          },
+        },
+      } as typeof nextConfig;
+    }
+  }
+
+  if (channel === "whatsapp" && typeof opts.selfChatMode === "boolean") {
+    nextConfig = {
+      ...nextConfig,
+      channels: {
+        ...nextConfig.channels,
+        whatsapp: {
+          ...(nextConfig.channels as any)?.whatsapp,
+          selfChatMode: opts.selfChatMode,
+        },
+      },
+    } as typeof nextConfig;
   }
 
   await writeConfigFile(nextConfig);

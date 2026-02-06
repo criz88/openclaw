@@ -49,9 +49,12 @@ export function applyChannelAccountConfig(params: {
   ship?: string;
   url?: string;
   code?: string;
+  selfChatMode?: boolean;
   groupChannels?: string[];
   dmAllowlist?: string[];
   autoDiscoverChannels?: boolean;
+  groupPolicy?: string;
+  extraInput?: Record<string, unknown>;
 }): OpenClawConfig {
   const accountId = normalizeAccountId(params.accountId);
   const plugin = getChannelPlugin(params.channel);
@@ -88,9 +91,12 @@ export function applyChannelAccountConfig(params: {
     ship: params.ship,
     url: params.url,
     code: params.code,
+    selfChatMode: params.selfChatMode,
     groupChannels: params.groupChannels,
     dmAllowlist: params.dmAllowlist,
     autoDiscoverChannels: params.autoDiscoverChannels,
+    groupPolicy: params.groupPolicy,
+    ...(params.extraInput ?? {}),
   };
   return apply({ cfg: params.cfg, accountId, input });
 }

@@ -87,6 +87,14 @@ export const whatsappPlugin: ChannelPlugin<ResolvedWhatsAppAccount> = {
       const accountKey = accountId || DEFAULT_ACCOUNT_ID;
       const accounts = { ...cfg.channels?.whatsapp?.accounts };
       delete accounts[accountKey];
+      if (Object.keys(accounts).length === 0) {
+        const channels = { ...cfg.channels };
+        delete channels.whatsapp;
+        return {
+          ...cfg,
+          channels: Object.keys(channels).length > 0 ? channels : undefined,
+        };
+      }
       return {
         ...cfg,
         channels: {
@@ -178,8 +186,13 @@ export const whatsappPlugin: ChannelPlugin<ResolvedWhatsAppAccount> = {
         channelKey: "whatsapp",
         alwaysUseAccounts: true,
       });
+      const existingEntry = next.channels?.whatsapp?.accounts?.[accountId] ?? {};
+      const { selfChatMode: _legacySelfChatMode, ...entryBase } = existingEntry as Record<
+        string,
+        unknown
+      >;
       const entry = {
-        ...next.channels?.whatsapp?.accounts?.[accountId],
+        ...entryBase,
         ...(input.authDir ? { authDir: input.authDir } : {}),
         enabled: true,
       };
@@ -189,6 +202,9 @@ export const whatsappPlugin: ChannelPlugin<ResolvedWhatsAppAccount> = {
           ...next.channels,
           whatsapp: {
             ...next.channels?.whatsapp,
+            ...(typeof input.selfChatMode === "boolean"
+              ? { selfChatMode: input.selfChatMode }
+              : {}),
             accounts: {
               ...next.channels?.whatsapp?.accounts,
               [accountId]: entry,
@@ -445,7 +461,7 @@ export const whatsappPlugin: ChannelPlugin<ResolvedWhatsAppAccount> = {
         accountId: account.accountId,
         name: account.name,
         enabled: account.enabled,
-        configured: true,
+        configured: linked,
         linked,
         running: runtime?.running ?? false,
         connected: runtime?.connected ?? false,

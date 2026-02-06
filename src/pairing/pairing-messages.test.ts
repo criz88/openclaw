@@ -1,22 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { buildPairingReply } from "./pairing-messages.js";
 
 describe("buildPairingReply", () => {
-  let previousProfile: string | undefined;
-
-  beforeEach(() => {
-    previousProfile = process.env.OPENCLAW_PROFILE;
-    process.env.OPENCLAW_PROFILE = "isolated";
-  });
-
-  afterEach(() => {
-    if (previousProfile === undefined) {
-      delete process.env.OPENCLAW_PROFILE;
-      return;
-    }
-    process.env.OPENCLAW_PROFILE = previousProfile;
-  });
-
   const cases = [
     {
       channel: "discord",
@@ -50,11 +35,10 @@ describe("buildPairingReply", () => {
       const text = buildPairingReply(testCase);
       expect(text).toContain(testCase.idLine);
       expect(text).toContain(`Pairing code: ${testCase.code}`);
-      // CLI commands should respect OPENCLAW_PROFILE when set (most tests run with isolated profile)
-      const commandRe = new RegExp(
-        `(?:openclaw|openclaw) --profile isolated pairing approve ${testCase.channel} <code>`,
+      expect(text).toContain("Ask the bot owner to approve in OpenClaw App:");
+      expect(text).toContain(
+        "Open OpenClaw Desktop -> Channels -> Pending List -> enter this Pairing code.",
       );
-      expect(text).toMatch(commandRe);
     });
   }
 });

@@ -154,7 +154,7 @@ export function resolveWhatsAppAccount(params: {
       accountCfg?.messagePrefix ?? rootCfg?.messagePrefix ?? params.cfg.messages?.messagePrefix,
     authDir,
     isLegacyAuthDir: isLegacy,
-    selfChatMode: accountCfg?.selfChatMode ?? rootCfg?.selfChatMode,
+    selfChatMode: rootCfg?.selfChatMode,
     dmPolicy: accountCfg?.dmPolicy ?? rootCfg?.dmPolicy,
     allowFrom: accountCfg?.allowFrom ?? rootCfg?.allowFrom,
     groupAllowFrom: accountCfg?.groupAllowFrom ?? rootCfg?.groupAllowFrom,

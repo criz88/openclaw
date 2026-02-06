@@ -25,7 +25,6 @@ import { formatLocationText, toLocationContext } from "../channels/location.js";
 import { logInboundDrop } from "../channels/logging.js";
 import { resolveMentionGatingWithBypass } from "../channels/mention-gating.js";
 import { recordInboundSession } from "../channels/session.js";
-import { formatCliCommand } from "../cli/command-format.js";
 import { readSessionUpdatedAt, resolveStorePath } from "../config/sessions.js";
 import { logVerbose, shouldLogVerbose } from "../globals.js";
 import { recordChannelActivity } from "../infra/channel-activity.js";
@@ -287,8 +286,8 @@ export const buildTelegramMessageContext = async ({
                       "",
                       `Pairing code: ${code}`,
                       "",
-                      "Ask the bot owner to approve with:",
-                      formatCliCommand("openclaw pairing approve telegram <code>"),
+                      "Ask the bot owner to approve in OpenClaw App:",
+                      "Open OpenClaw Desktop -> Channels -> Pending List -> enter this Pairing code.",
                     ].join("\n"),
                   ),
               });

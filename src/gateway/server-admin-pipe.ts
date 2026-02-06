@@ -477,6 +477,53 @@ export async function startGatewayAdminPipe(params: {
       }
     }
 
+    if (url.pathname === "/api/v1/channels/catalog") {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      const { listChatChannels } = await import("../channels/registry.js");
+      const { listChannelPlugins } = await import("../channels/plugins/index.js");
+      const { listChannelPluginCatalogEntries } = await import("../channels/plugins/catalog.js");
+      const { resolveAgentWorkspaceDir, resolveDefaultAgentId } = await import("../agents/agent-scope.js");
+      const { loadConfig } = await import("../config/config.js");
+      const coreEntries = listChatChannels();
+      const installedEntries = listChannelPlugins();
+      const coreChannels = coreEntries.map((entry: any) => entry.id);
+      const installedChannels = installedEntries.map((entry: any) => entry.id);
+      let catalogChannels: string[] = [];
+      let catalogEntries: Array<{ id: string; meta?: { label?: string } }> = [];
+      try {
+        const cfg = loadConfig();
+        const workspaceDir = resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg));
+        catalogEntries = listChannelPluginCatalogEntries({ workspaceDir }).map((entry: any) => ({
+          id: entry.id,
+          meta: entry.meta,
+        }));
+        catalogChannels = catalogEntries.map((entry) => entry.id);
+      } catch {
+        catalogChannels = [];
+      }
+      const labels: Record<string, string> = {};
+      for (const entry of coreEntries) {
+        labels[entry.id] = entry.label || entry.id;
+      }
+      for (const entry of installedEntries) {
+        labels[entry.id] = entry.meta?.label || labels[entry.id] || entry.id;
+      }
+      for (const entry of catalogEntries) {
+        labels[entry.id] = entry.meta?.label || labels[entry.id] || entry.id;
+      }
+      const channels = Array.from(
+        new Set<string>([...coreChannels, ...installedChannels, ...catalogChannels]),
+      );
+      return sendJson(res, 200, {
+        ok: true,
+        channels,
+        coreChannels,
+        installedChannels,
+        catalogChannels,
+        labels,
+      });
+    }
+
     if (url.pathname === "/api/v1/channels/status") {
       if (req.method !== "POST") return methodNotAllowed(res);
       const body = await readJson(req);
@@ -677,7 +724,33 @@ export async function startGatewayAdminPipe(params: {
       const body = await readJson(req);
       const { channelsRemoveCommand } = await import("../commands/channels.js");
       try {
-        await channelsRemoveCommand(body as any, { ...defaultRuntime, exit: () => { throw new Error("runtime.exit"); } }, { hasFlags: true });
+        const payload = { ...(body || {}), delete: body?.delete !== false };
+        const channelInput = typeof payload?.channel === "string" ? payload.channel.trim() : "";
+        const shouldPurgeAuth = payload?.purgeAuth !== false;
+        if (channelInput === "whatsapp" && shouldPurgeAuth) {
+          try {
+            const { loadConfig } = await import("../config/config.js");
+            const { resolveWhatsAppAccount } = await import("../web/accounts.js");
+            const { logoutWeb } = await import("../web/auth-store.js");
+            const cfg = loadConfig();
+            const account = resolveWhatsAppAccount({
+              cfg,
+              accountId: typeof payload?.account === "string" ? payload.account : undefined,
+            });
+            await logoutWeb({
+              authDir: account.authDir,
+              isLegacyAuthDir: account.isLegacyAuthDir,
+              runtime: defaultRuntime,
+            });
+          } catch {
+            // best-effort: config deletion below should still proceed
+          }
+        }
+        await channelsRemoveCommand(
+          payload as any,
+          { ...defaultRuntime, exit: () => { throw new Error("runtime.exit"); } },
+          { hasFlags: true },
+        );
         return sendJson(res, 200, { ok: true, action: "channels.remove" });
       } catch (err) {
         return sendJson(res, 400, { ok: false, error: String(err) });
@@ -767,6 +840,51 @@ export async function startGatewayAdminPipe(params: {
       try {
         await runChannelLogin(body as any, { ...defaultRuntime, exit: () => { throw new Error("runtime.exit"); } });
         return sendJson(res, 200, { ok: true, action: "channels.login" });
+      } catch (err) {
+        return sendJson(res, 400, { ok: false, error: String(err) });
+      }
+    }
+
+    if (url.pathname === "/api/v1/channels/whatsapp/login/start") {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      const body = await readJson(req);
+      const { startWebLoginWithQr } = await import("../web/login-qr.js");
+      try {
+        const result = await startWebLoginWithQr({
+          accountId:
+            typeof body?.accountId === "string" && body.accountId.trim()
+              ? body.accountId.trim()
+              : undefined,
+          force: body?.force === true,
+          timeoutMs:
+            typeof body?.timeoutMs === "number" && Number.isFinite(body.timeoutMs)
+              ? body.timeoutMs
+              : undefined,
+          runtime: defaultRuntime,
+        });
+        return sendJson(res, 200, { ok: true, ...result });
+      } catch (err) {
+        return sendJson(res, 400, { ok: false, error: String(err) });
+      }
+    }
+
+    if (url.pathname === "/api/v1/channels/whatsapp/login/wait") {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      const body = await readJson(req);
+      const { waitForWebLogin } = await import("../web/login-qr.js");
+      try {
+        const result = await waitForWebLogin({
+          accountId:
+            typeof body?.accountId === "string" && body.accountId.trim()
+              ? body.accountId.trim()
+              : undefined,
+          timeoutMs:
+            typeof body?.timeoutMs === "number" && Number.isFinite(body.timeoutMs)
+              ? body.timeoutMs
+              : undefined,
+          runtime: defaultRuntime,
+        });
+        return sendJson(res, 200, { ok: true, ...result });
       } catch (err) {
         return sendJson(res, 400, { ok: false, error: String(err) });
       }

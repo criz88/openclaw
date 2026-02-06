@@ -45,11 +45,25 @@ export type ChannelSetupInput = {
   ship?: string;
   url?: string;
   code?: string;
+  selfChatMode?: boolean;
   groupChannels?: string[];
   dmAllowlist?: string[];
   dmPolicy?: string;
+  groupPolicy?: string;
   allowFrom?: string[];
   autoDiscoverChannels?: boolean;
+  baseUrl?: string;
+  secret?: string;
+  secretFile?: string;
+  webhookSecret?: string;
+  profile?: string;
+  appId?: string;
+  appSecret?: string;
+  appSecretFile?: string;
+  domain?: string;
+  channelAccessToken?: string;
+  channelSecret?: string;
+  [key: string]: unknown;
 };
 
 export type ChannelStatusIssue = {
