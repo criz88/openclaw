@@ -93,6 +93,7 @@ export function createChatRunRegistry(): ChatRunRegistry {
 export type ChatRunState = {
   registry: ChatRunRegistry;
   buffers: Map<string, string>;
+  mediaUrls: Map<string, string[]>;
   deltaSentAt: Map<string, number>;
   abortedRuns: Map<string, number>;
   clear: () => void;
@@ -101,12 +102,14 @@ export type ChatRunState = {
 export function createChatRunState(): ChatRunState {
   const registry = createChatRunRegistry();
   const buffers = new Map<string, string>();
+  const mediaUrls = new Map<string, string[]>();
   const deltaSentAt = new Map<string, number>();
   const abortedRuns = new Map<string, number>();
 
   const clear = () => {
     registry.clear();
     buffers.clear();
+    mediaUrls.clear();
     deltaSentAt.clear();
     abortedRuns.clear();
   };
@@ -114,6 +117,7 @@ export function createChatRunState(): ChatRunState {
   return {
     registry,
     buffers,
+    mediaUrls,
     deltaSentAt,
     abortedRuns,
     clear,
@@ -145,6 +149,65 @@ export function createAgentEventHandler({
   resolveSessionKeyForRun,
   clearAgentRunContext,
 }: AgentEventHandlerOptions) {
+  const mergeMediaUrls = (runId: string, urls: string[]) => {
+    if (!urls.length) return;
+    const prev = chatRunState.mediaUrls.get(runId) ?? [];
+    const deduped = new Set(prev);
+    for (const url of urls) {
+      const trimmed = url.trim();
+      if (trimmed) deduped.add(trimmed);
+    }
+    chatRunState.mediaUrls.set(runId, [...deduped]);
+  };
+
+  const readAssistantMediaUrls = (evt: AgentEventPayload): string[] => {
+    const data = evt.data as Record<string, unknown> | undefined;
+    const urls: string[] = [];
+    const rawMedia = data?.mediaUrls;
+    if (Array.isArray(rawMedia)) {
+      for (const entry of rawMedia) {
+        if (typeof entry === "string" && entry.trim()) {
+          urls.push(entry.trim());
+        }
+      }
+    }
+    const rawImages = data?.images;
+    if (Array.isArray(rawImages)) {
+      for (const entry of rawImages) {
+        if (typeof entry === "string" && entry.trim()) {
+          urls.push(entry.trim());
+          continue;
+        }
+        if (entry && typeof entry === "object") {
+          const rec = entry as Record<string, unknown>;
+          if (typeof rec.url === "string" && rec.url.trim()) urls.push(rec.url.trim());
+          if (typeof rec.imageUrl === "string" && rec.imageUrl.trim()) {
+            urls.push(rec.imageUrl.trim());
+          }
+        }
+      }
+    }
+    return urls;
+  };
+
+  const buildAssistantMessage = (text: string, mediaUrls: string[]) => {
+    const content: Array<Record<string, unknown>> = [];
+    if (text) {
+      content.push({ type: "text", text });
+    }
+    for (const url of mediaUrls) {
+      content.push({ type: "image", url });
+    }
+    if (content.length === 0) {
+      return undefined;
+    }
+    return {
+      role: "assistant",
+      content,
+      timestamp: Date.now(),
+    };
+  };
+
   const emitChatDelta = (sessionKey: string, clientRunId: string, seq: number, text: string) => {
     chatRunState.buffers.set(clientRunId, text);
     const now = Date.now();
@@ -179,7 +242,9 @@ export function createAgentEventHandler({
     error?: unknown,
   ) => {
     const text = chatRunState.buffers.get(clientRunId)?.trim() ?? "";
+    const mediaUrls = chatRunState.mediaUrls.get(clientRunId) ?? [];
     chatRunState.buffers.delete(clientRunId);
+    chatRunState.mediaUrls.delete(clientRunId);
     chatRunState.deltaSentAt.delete(clientRunId);
     if (jobState === "done") {
       const payload = {
@@ -187,13 +252,7 @@ export function createAgentEventHandler({
         sessionKey,
         seq,
         state: "final" as const,
-        message: text
-          ? {
-              role: "assistant",
-              content: [{ type: "text", text }],
-              timestamp: Date.now(),
-            }
-          : undefined,
+        message: buildAssistantMessage(text, mediaUrls),
       };
       // Suppress webchat broadcast for heartbeat runs when showOk is false
       if (!shouldSuppressHeartbeatBroadcast(clientRunId)) {
@@ -269,6 +328,9 @@ export function createAgentEventHandler({
 
     if (sessionKey) {
       nodeSendToSession(sessionKey, "agent", agentPayload);
+      if (!isAborted && evt.stream === "assistant") {
+        mergeMediaUrls(clientRunId, readAssistantMediaUrls(evt));
+      }
       if (!isAborted && evt.stream === "assistant" && typeof evt.data?.text === "string") {
         emitChatDelta(sessionKey, clientRunId, evt.seq, evt.data.text);
       } else if (!isAborted && (lifecyclePhase === "end" || lifecyclePhase === "error")) {
@@ -298,6 +360,7 @@ export function createAgentEventHandler({
         chatRunState.abortedRuns.delete(clientRunId);
         chatRunState.abortedRuns.delete(evt.runId);
         chatRunState.buffers.delete(clientRunId);
+        chatRunState.mediaUrls.delete(clientRunId);
         chatRunState.deltaSentAt.delete(clientRunId);
         if (chatLink) {
           chatRunState.registry.remove(evt.runId, clientRunId, sessionKey);

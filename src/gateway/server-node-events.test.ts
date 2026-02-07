@@ -37,6 +37,10 @@ function buildCtx(): NodeEventContext {
     refreshHealthSnapshot: async () => ({}) as HealthSummary,
     loadGatewayModelCatalog: async () => [],
     logGateway: { warn: () => {} },
+    nodeRegistry: {
+      get: () => undefined,
+      setActions: () => true,
+    },
   };
 }
 
@@ -78,9 +82,57 @@ describe("node exec events", () => {
 
     expect(enqueueSystemEventMock).toHaveBeenCalledWith(
       "Exec finished (node=node-2 id=run-2, code 0)\ndone",
-      { sessionKey: "node-node-2", contextKey: "exec:run-2" },
+      { sessionKey: "desktop-node-2", contextKey: "exec:run-2" },
     );
     expect(requestHeartbeatNowMock).toHaveBeenCalledWith({ reason: "exec-event" });
+  });
+
+  it("rewrites desktop-node session key suffix to display name slug", async () => {
+    const ctx = buildCtx();
+    ctx.nodeRegistry.get = () => ({ displayName: "Alice Surface Pro" });
+    await handleNodeEvent(ctx, "a1b2c3d4e5f678901234567890", {
+      event: "exec.started",
+      payloadJSON: JSON.stringify({
+        sessionKey: "desktop-node-a1b2c3d4e5f678901234567890",
+      }),
+    });
+
+    expect(enqueueSystemEventMock).toHaveBeenCalledWith(
+      "Exec started (node=a1b2c3d4e5f678901234567890)",
+      { sessionKey: "desktop-node-alice-surface-pro", contextKey: "exec" },
+    );
+  });
+
+  it("rewrites desktop session key suffix to display name slug", async () => {
+    const ctx = buildCtx();
+    ctx.nodeRegistry.get = () => ({ displayName: "Studio Workstation" });
+    await handleNodeEvent(ctx, "9f8e7d6c5b4a321001122334455", {
+      event: "exec.started",
+      payloadJSON: JSON.stringify({
+        sessionKey: "desktop-9f8e7d6c5b4a321001122334455",
+      }),
+    });
+
+    expect(enqueueSystemEventMock).toHaveBeenCalledWith(
+      "Exec started (node=9f8e7d6c5b4a321001122334455)",
+      { sessionKey: "desktop-studio-workstation", contextKey: "exec" },
+    );
+  });
+
+  it("rewrites agent-scoped desktop session key suffix to display name slug", async () => {
+    const ctx = buildCtx();
+    ctx.nodeRegistry.get = () => ({ displayName: "OpenClaw Companion" });
+    await handleNodeEvent(ctx, "24fc739ad7bc11223344556677889900", {
+      event: "exec.started",
+      payloadJSON: JSON.stringify({
+        sessionKey: "agent:dev:desktop-24fc739ad7bc11223344556677889900",
+      }),
+    });
+
+    expect(enqueueSystemEventMock).toHaveBeenCalledWith(
+      "Exec started (node=24fc739ad7bc11223344556677889900)",
+      { sessionKey: "agent:dev:desktop-openclaw-companion", contextKey: "exec" },
+    );
   });
 
   it("enqueues exec.denied events with reason", async () => {

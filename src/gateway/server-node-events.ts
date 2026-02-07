@@ -11,7 +11,89 @@ import { defaultRuntime } from "../runtime.js";
 import { loadSessionEntry } from "./session-utils.js";
 import { formatForLog } from "./ws-log.js";
 
+const slugifySessionSuffix = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+
+const sanitizeNodeSessionKey = (
+  sessionKey: string,
+  nodeId: string,
+  nodeDisplayName?: string,
+): string => {
+  const trimmed = sessionKey.trim();
+  if (!trimmed) return trimmed;
+  const lastColon = trimmed.lastIndexOf(":");
+  const keyPrefix = lastColon >= 0 ? trimmed.slice(0, lastColon + 1) : "";
+  const keyTail = lastColon >= 0 ? trimmed.slice(lastColon + 1) : trimmed;
+  const keyPrefixes = ["desktop-node-", "desktop-", "node-"];
+  const matchedPrefix = keyPrefixes.find((prefix) => keyTail.startsWith(prefix));
+  if (!matchedPrefix) {
+    return trimmed;
+  }
+  const suffix = keyTail.slice(matchedPrefix.length).trim();
+  const nameSlug = nodeDisplayName ? slugifySessionSuffix(nodeDisplayName) : "";
+  const shortNodeId = slugifySessionSuffix(nodeId).slice(0, 12);
+  const replacement = nameSlug || shortNodeId || "node";
+  if (!suffix || suffix === nodeId || suffix.length > 24) {
+    return `${keyPrefix}${matchedPrefix}${replacement}`;
+  }
+  return trimmed;
+};
+
+const mergeSessionEntries = (
+  target: Record<string, unknown> | undefined,
+  source: Record<string, unknown>,
+): Record<string, unknown> => {
+  if (!target) return source;
+  const targetUpdatedAt =
+    typeof target.updatedAt === "number" && Number.isFinite(target.updatedAt) ? target.updatedAt : 0;
+  const sourceUpdatedAt =
+    typeof source.updatedAt === "number" && Number.isFinite(source.updatedAt) ? source.updatedAt : 0;
+  return {
+    ...source,
+    ...target,
+    updatedAt: Math.max(targetUpdatedAt, sourceUpdatedAt) || undefined,
+  };
+};
+
+const migrateLegacyNodeSessionKeys = (params: {
+  store: Record<string, Record<string, unknown>>;
+  canonicalKey: string;
+  nodeId: string;
+  nodeDisplayName?: string;
+}) => {
+  const canonical = params.canonicalKey.trim();
+  if (!canonical) return canonical;
+  const lastColon = canonical.lastIndexOf(":");
+  const keyPrefix = lastColon >= 0 ? canonical.slice(0, lastColon + 1) : "";
+  const normalizedNodeId = params.nodeId.trim();
+  if (!normalizedNodeId) return canonical;
+  const legacyKeys = [
+    `${keyPrefix}desktop-${normalizedNodeId}`,
+    `${keyPrefix}desktop-node-${normalizedNodeId}`,
+    `${keyPrefix}node-${normalizedNodeId}`,
+  ];
+  let targetKey = sanitizeNodeSessionKey(canonical, params.nodeId, params.nodeDisplayName);
+  if (targetKey !== canonical && params.store[canonical]) {
+    params.store[targetKey] = mergeSessionEntries(params.store[targetKey], params.store[canonical]);
+    delete params.store[canonical];
+  }
+  for (const key of legacyKeys) {
+    if (key === targetKey) continue;
+    const entry = params.store[key];
+    if (!entry) continue;
+    params.store[targetKey] = mergeSessionEntries(params.store[targetKey], entry);
+    delete params.store[key];
+  }
+  return targetKey;
+};
+
 export const handleNodeEvent = async (ctx: NodeEventContext, nodeId: string, evt: NodeEvent) => {
+  const nodeDisplayName = ctx.nodeRegistry.get(nodeId)?.displayName;
   switch (evt.event) {
     case "voice.transcript": {
       if (!evt.payloadJSON) {
@@ -41,16 +123,23 @@ export const handleNodeEvent = async (ctx: NodeEventContext, nodeId: string, evt
       const sessionId = entry?.sessionId ?? randomUUID();
       if (storePath) {
         await updateSessionStore(storePath, (store) => {
-          store[canonicalKey] = {
+          const targetKey = migrateLegacyNodeSessionKeys({
+            store: store as Record<string, Record<string, unknown>>,
+            canonicalKey,
+            nodeId,
+            nodeDisplayName,
+          });
+          const existing = store[targetKey] ?? entry;
+          store[targetKey] = {
             sessionId,
             updatedAt: now,
-            thinkingLevel: entry?.thinkingLevel,
-            verboseLevel: entry?.verboseLevel,
-            reasoningLevel: entry?.reasoningLevel,
-            systemSent: entry?.systemSent,
-            sendPolicy: entry?.sendPolicy,
-            lastChannel: entry?.lastChannel,
-            lastTo: entry?.lastTo,
+            thinkingLevel: existing?.thinkingLevel,
+            verboseLevel: existing?.verboseLevel,
+            reasoningLevel: existing?.reasoningLevel,
+            systemSent: existing?.systemSent,
+            sendPolicy: existing?.sendPolicy,
+            lastChannel: existing?.lastChannel,
+            lastTo: existing?.lastTo,
           };
         });
       }
@@ -112,22 +201,32 @@ export const handleNodeEvent = async (ctx: NodeEventContext, nodeId: string, evt
       const deliver = Boolean(link?.deliver) && Boolean(channel);
 
       const sessionKeyRaw = (link?.sessionKey ?? "").trim();
-      const sessionKey = sessionKeyRaw.length > 0 ? sessionKeyRaw : `node-${nodeId}`;
+      const sessionKey =
+        sessionKeyRaw.length > 0
+          ? sanitizeNodeSessionKey(sessionKeyRaw, nodeId, nodeDisplayName)
+          : `desktop-${slugifySessionSuffix(nodeDisplayName ?? "") || slugifySessionSuffix(nodeId).slice(0, 12) || "node"}`;
       const { storePath, entry, canonicalKey } = loadSessionEntry(sessionKey);
       const now = Date.now();
       const sessionId = entry?.sessionId ?? randomUUID();
       if (storePath) {
         await updateSessionStore(storePath, (store) => {
-          store[canonicalKey] = {
+          const targetKey = migrateLegacyNodeSessionKeys({
+            store: store as Record<string, Record<string, unknown>>,
+            canonicalKey,
+            nodeId,
+            nodeDisplayName,
+          });
+          const existing = store[targetKey] ?? entry;
+          store[targetKey] = {
             sessionId,
             updatedAt: now,
-            thinkingLevel: entry?.thinkingLevel,
-            verboseLevel: entry?.verboseLevel,
-            reasoningLevel: entry?.reasoningLevel,
-            systemSent: entry?.systemSent,
-            sendPolicy: entry?.sendPolicy,
-            lastChannel: entry?.lastChannel,
-            lastTo: entry?.lastTo,
+            thinkingLevel: existing?.thinkingLevel,
+            verboseLevel: existing?.verboseLevel,
+            reasoningLevel: existing?.reasoningLevel,
+            systemSent: existing?.systemSent,
+            sendPolicy: existing?.sendPolicy,
+            lastChannel: existing?.lastChannel,
+            lastTo: existing?.lastTo,
           };
         });
       }
@@ -239,9 +338,26 @@ export const handleNodeEvent = async (ctx: NodeEventContext, nodeId: string, evt
       const obj =
         typeof payload === "object" && payload !== null ? (payload as Record<string, unknown>) : {};
       const sessionKey =
-        typeof obj.sessionKey === "string" ? obj.sessionKey.trim() : `node-${nodeId}`;
+        typeof obj.sessionKey === "string"
+          ? sanitizeNodeSessionKey(obj.sessionKey, nodeId, nodeDisplayName)
+          : `desktop-${slugifySessionSuffix(nodeDisplayName ?? "") || slugifySessionSuffix(nodeId).slice(0, 12) || "node"}`;
       if (!sessionKey) {
         return;
+      }
+      const { storePath, canonicalKey } = loadSessionEntry(sessionKey);
+      if (storePath) {
+        try {
+          await updateSessionStore(storePath, (store) => {
+            migrateLegacyNodeSessionKeys({
+              store: store as Record<string, Record<string, unknown>>,
+              canonicalKey,
+              nodeId,
+              nodeDisplayName,
+            });
+          });
+        } catch {
+          // Best-effort migration; ignore write failures for exec event path.
+        }
       }
       const runId = typeof obj.runId === "string" ? obj.runId.trim() : "";
       const command = typeof obj.command === "string" ? obj.command.trim() : "";

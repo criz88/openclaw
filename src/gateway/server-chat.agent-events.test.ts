@@ -39,4 +39,53 @@ describe("agent event handler", () => {
     expect(sessionChatCalls).toHaveLength(1);
     nowSpy.mockRestore();
   });
+
+  it("includes assistant mediaUrls in chat final payload", () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(2_000);
+    const broadcast = vi.fn();
+    const nodeSendToSession = vi.fn();
+    const agentRunSeq = new Map<string, number>();
+    const chatRunState = createChatRunState();
+    chatRunState.registry.add("run-2", { sessionKey: "session-2", clientRunId: "client-2" });
+
+    const handler = createAgentEventHandler({
+      broadcast,
+      nodeSendToSession,
+      agentRunSeq,
+      chatRunState,
+      resolveSessionKeyForRun: () => undefined,
+      clearAgentRunContext: vi.fn(),
+    });
+
+    handler({
+      runId: "run-2",
+      seq: 1,
+      stream: "assistant",
+      ts: Date.now(),
+      data: {
+        text: "Here you go",
+        mediaUrls: ["https://example.com/image.png"],
+      },
+    });
+    handler({
+      runId: "run-2",
+      seq: 2,
+      stream: "lifecycle",
+      ts: Date.now(),
+      data: { phase: "end" },
+    });
+
+    const chatCalls = broadcast.mock.calls.filter(([event]) => event === "chat");
+    const finalPayload = chatCalls[chatCalls.length - 1]?.[1] as {
+      state?: string;
+      message?: { content?: Array<{ type?: string; text?: string; url?: string }> };
+    };
+    expect(finalPayload.state).toBe("final");
+    const content = finalPayload.message?.content ?? [];
+    expect(content.some((block) => block.type === "text" && block.text === "Here you go")).toBe(true);
+    expect(
+      content.some((block) => block.type === "image" && block.url === "https://example.com/image.png"),
+    ).toBe(true);
+    nowSpy.mockRestore();
+  });
 });

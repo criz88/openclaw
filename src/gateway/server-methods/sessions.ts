@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
+import path from "node:path";
 import type { GatewayRequestHandlers } from "./types.js";
 import { abortEmbeddedPiRun, waitForEmbeddedPiRunEnd } from "../../agents/pi-embedded.js";
 import { stopSubagentsForRequester } from "../../auto-reply/reply/abort.js";
@@ -7,11 +8,14 @@ import { clearSessionQueues } from "../../auto-reply/reply/queue.js";
 import { loadConfig } from "../../config/config.js";
 import {
   loadSessionStore,
+  saveSessionStore,
   snapshotSessionOrigin,
   resolveMainSessionKey,
   type SessionEntry,
   updateSessionStore,
 } from "../../config/sessions.js";
+import { resolveStateDir } from "../../config/paths.js";
+import { listDevicePairing } from "../../infra/device-pairing.js";
 import {
   ErrorCodes,
   errorShape,
@@ -39,8 +43,118 @@ import {
 import { applySessionsPatchToStore } from "../sessions-patch.js";
 import { resolveSessionKeyFromResolveParams } from "../sessions-resolve.js";
 
+const NODE_KEY_SUFFIX_RE = /^(.*:)?(desktop-node-|desktop-|node-)([^:]+)$/;
+let lastNodeSessionMigrationSignature = "";
+
+const slugifySessionSuffix = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+
+const mergeSessionEntries = (
+  target: SessionEntry | undefined,
+  source: SessionEntry,
+): SessionEntry => {
+  if (!target) return source;
+  const targetUpdatedAt =
+    typeof target.updatedAt === "number" && Number.isFinite(target.updatedAt) ? target.updatedAt : 0;
+  const sourceUpdatedAt =
+    typeof source.updatedAt === "number" && Number.isFinite(source.updatedAt) ? source.updatedAt : 0;
+  return {
+    ...source,
+    ...target,
+    updatedAt: Math.max(targetUpdatedAt, sourceUpdatedAt) || undefined,
+  };
+};
+
+function buildNodeNameMap(context: { nodeRegistry: { listConnected: () => Array<{ nodeId: string; displayName?: string }> } }, paired: Array<{ deviceId: string; displayName?: string }>) {
+  const map = new Map<string, string>();
+  for (const n of context.nodeRegistry.listConnected()) {
+    const name = (n.displayName ?? "").trim();
+    if (n.nodeId.trim() && name) {
+      map.set(n.nodeId.trim(), name);
+    }
+  }
+  for (const p of paired) {
+    const id = p.deviceId.trim();
+    const name = (p.displayName ?? "").trim();
+    if (id && name && !map.has(id)) {
+      map.set(id, name);
+    }
+  }
+  return map;
+}
+
+function migrateStoreDesktopNodeKeys(
+  store: Record<string, SessionEntry>,
+  nodeNameById: Map<string, string>,
+): boolean {
+  let changed = false;
+  for (const sourceKey of Object.keys(store)) {
+    const match = sourceKey.match(NODE_KEY_SUFFIX_RE);
+    if (!match) continue;
+    const sourcePrefix = match[1] ?? "";
+    const marker = match[2];
+    const suffix = (match[3] ?? "").trim();
+    if (!suffix) continue;
+    const nodeName = nodeNameById.get(suffix);
+    if (!nodeName) continue;
+    const nameSlug = slugifySessionSuffix(nodeName);
+    if (!nameSlug) continue;
+    const targetKey = `${sourcePrefix}${marker}${nameSlug}`;
+    if (targetKey === sourceKey) continue;
+    const sourceEntry = store[sourceKey];
+    if (!sourceEntry) continue;
+    store[targetKey] = mergeSessionEntries(store[targetKey], sourceEntry);
+    delete store[sourceKey];
+    changed = true;
+  }
+  return changed;
+}
+
+async function migrateDesktopNodeSessionKeys(params: {
+  context: { nodeRegistry: { listConnected: () => Array<{ nodeId: string; displayName?: string }> } };
+}) {
+  const pairing = await listDevicePairing().catch(() => null);
+  const paired = (pairing?.paired ?? []).map((entry) => ({
+    deviceId: String(entry.deviceId ?? "").trim(),
+    displayName: typeof entry.displayName === "string" ? entry.displayName : undefined,
+  }));
+  const nodeNameById = buildNodeNameMap(params.context, paired);
+  if (nodeNameById.size === 0) return;
+  const signature = [...nodeNameById.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([id, name]) => `${id}:${name}`)
+    .join("|");
+  if (signature && signature === lastNodeSessionMigrationSignature) return;
+
+  const agentsRoot = path.join(resolveStateDir(), "agents");
+  let agentDirs: string[] = [];
+  try {
+    agentDirs = fs
+      .readdirSync(agentsRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+  } catch {
+    return;
+  }
+
+  for (const agentId of agentDirs) {
+    const storePath = path.join(agentsRoot, agentId, "sessions", "sessions.json");
+    if (!fs.existsSync(storePath)) continue;
+    const store = loadSessionStore(storePath);
+    const changed = migrateStoreDesktopNodeKeys(store, nodeNameById);
+    if (!changed) continue;
+    await saveSessionStore(storePath, store);
+  }
+  lastNodeSessionMigrationSignature = signature;
+}
+
 export const sessionsHandlers: GatewayRequestHandlers = {
-  "sessions.list": ({ params, respond }) => {
+  "sessions.list": async ({ params, respond, context }) => {
     if (!validateSessionsListParams(params)) {
       respond(
         false,
@@ -54,6 +168,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
     }
     const p = params;
     const cfg = loadConfig();
+    await migrateDesktopNodeSessionKeys({ context });
     const { storePath, store } = loadCombinedSessionStoreForGateway(cfg);
     const result = listSessionsFromStore({
       cfg,
