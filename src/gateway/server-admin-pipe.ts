@@ -9,7 +9,7 @@ import type { OpenClawConfig, ConfigFileSnapshot } from "../config/config.js";
 import type { NodeRegistry } from "./node-registry.js";
 import { CONFIG_PATH, readConfigFileSnapshot, writeConfigFile } from "../config/config.js";
 import { VERSION } from "../version.js";
-import { buildToolsPrompt, listTools, TOOLS_POLICY_PROMPT } from "./server-methods/tools.js";
+import { buildToolsPrompt, listTools } from "./server-methods/tools.js";
 import { loadGatewayModelCatalog } from "./server-model-catalog.js";
 import { modelsSetCommand } from "../commands/models/set.js";
 import {
@@ -915,16 +915,14 @@ export async function startGatewayAdminPipe(params: {
         if (isToolsQuery && toolsPrompt) {
           return sendJson(res, 200, { ok: true, texts: [toolsPrompt] });
         }
-        const extraSystemPrompt = toolsPrompt
-          ? `${TOOLS_POLICY_PROMPT}\n\n${toolsPrompt}`
-          : TOOLS_POLICY_PROMPT;
+        const extraSystemPrompt = toolsPrompt || undefined;
         const result = await agentCommand(
           {
             message,
             sessionKey: sessionKey || "desktop-chat",
             to: "desktop-chat",
             deliver: false,
-            extraSystemPrompt,
+            ...(extraSystemPrompt ? { extraSystemPrompt } : {}),
           },
           defaultRuntime,
         );

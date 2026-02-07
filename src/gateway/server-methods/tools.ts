@@ -17,9 +17,6 @@ export const listTools = (context: { nodeRegistry: { listConnected: () => Array<
     );
 };
 
-export const TOOLS_POLICY_PROMPT =
-  "When describing available tools or actions, ONLY use the tools.list data below. Do not list any internal/system tools.";
-
 export function buildToolsPrompt(tools: ReturnType<typeof listTools>): string {
   if (tools.length === 0) return "";
   return [

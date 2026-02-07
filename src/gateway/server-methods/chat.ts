@@ -12,7 +12,7 @@ import { createReplyDispatcher } from "../../auto-reply/reply/reply-dispatcher.j
 import { createReplyPrefixOptions } from "../../channels/reply-prefix.js";
 import { resolveSendPolicy } from "../../sessions/send-policy.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../../utils/message-channel.js";
-import { buildToolsPrompt, listTools, TOOLS_POLICY_PROMPT } from "./tools.js";
+import { buildToolsPrompt, listTools } from "./tools.js";
 import {
   abortChatRunById,
   abortChatRunsForSessionKey,
@@ -453,12 +453,8 @@ export const chatHandlers: GatewayRequestHandlers = {
 
       const tools = listTools(context);
       const toolsPrompt = buildToolsPrompt(tools);
-      const groupSystemPrompt = toolsPrompt
-        ? `${TOOLS_POLICY_PROMPT}\n\n${toolsPrompt}`
-        : TOOLS_POLICY_PROMPT;
-      const toolsPrelude = toolsPrompt
-        ? `${TOOLS_POLICY_PROMPT}\n\n${toolsPrompt}\n\n`
-        : "";
+      const groupSystemPrompt = toolsPrompt || undefined;
+      const toolsPrelude = toolsPrompt ? `${toolsPrompt}\n\n` : "";
 
       const ctx: MsgContext = {
         Body: parsedMessage,
