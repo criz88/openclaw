@@ -1,6 +1,6 @@
 import type { OpenClawConfig } from "../../config/config.js";
 import type { SkillEntry, SkillSnapshot } from "./types.js";
-import { resolveSkillConfig } from "./config.js";
+import { isSkillEnabled, resolveSkillConfig } from "./config.js";
 import { resolveSkillKey } from "./frontmatter.js";
 
 export function applySkillEnvOverrides(params: { skills: SkillEntry[]; config?: OpenClawConfig }) {
@@ -10,7 +10,7 @@ export function applySkillEnvOverrides(params: { skills: SkillEntry[]; config?: 
   for (const entry of skills) {
     const skillKey = resolveSkillKey(entry.skill, entry);
     const skillConfig = resolveSkillConfig(config, skillKey);
-    if (!skillConfig) {
+    if (!isSkillEnabled(skillConfig)) {
       continue;
     }
 
@@ -54,7 +54,7 @@ export function applySkillEnvOverridesFromSnapshot(params: {
 
   for (const skill of snapshot.skills) {
     const skillConfig = resolveSkillConfig(config, skill.name);
-    if (!skillConfig) {
+    if (!isSkillEnabled(skillConfig)) {
       continue;
     }
 

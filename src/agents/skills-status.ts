@@ -4,6 +4,7 @@ import { CONFIG_DIR } from "../utils.js";
 import {
   hasBinary,
   isBundledSkillAllowed,
+  isSkillEnabled,
   isConfigPathTruthy,
   loadWorkspaceSkillEntries,
   resolveBundledAllowlist,
@@ -44,6 +45,7 @@ export type SkillStatusEntry = {
   always: boolean;
   disabled: boolean;
   blockedByAllowlist: boolean;
+  canEnable: boolean;
   eligible: boolean;
   requirements: {
     bins: string[];
@@ -173,7 +175,7 @@ function buildSkillStatus(
 ): SkillStatusEntry {
   const skillKey = resolveSkillKey(entry);
   const skillConfig = resolveSkillConfig(config, skillKey);
-  const disabled = skillConfig?.enabled === false;
+  const disabled = !isSkillEnabled(skillConfig);
   const allowBundled = resolveBundledAllowlist(config);
   const blockedByAllowlist = !isBundledSkillAllowed(entry, allowBundled);
   const always = entry.metadata?.always === true;
@@ -249,8 +251,7 @@ function buildSkillStatus(
         config: missingConfig,
         os: missingOs,
       };
-  const eligible =
-    !disabled &&
+  const canEnable =
     !blockedByAllowlist &&
     (always ||
       (missing.bins.length === 0 &&
@@ -258,6 +259,8 @@ function buildSkillStatus(
         missing.env.length === 0 &&
         missing.config.length === 0 &&
         missing.os.length === 0));
+  const eligible =
+    !disabled && canEnable;
 
   return {
     name: entry.skill.name,
@@ -273,6 +276,7 @@ function buildSkillStatus(
     always,
     disabled,
     blockedByAllowlist,
+    canEnable,
     eligible,
     requirements: {
       bins: requiredBins,

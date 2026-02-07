@@ -60,6 +60,18 @@ export function resolveSkillConfig(
   return entry;
 }
 
+export function isSkillEnabled(skillConfig: SkillConfig | undefined): boolean {
+  if (!skillConfig || typeof skillConfig !== "object") {
+    // Default-off: skills must be enabled explicitly.
+    return false;
+  }
+  if (Object.prototype.hasOwnProperty.call(skillConfig, "enabled")) {
+    return skillConfig.enabled === true;
+  }
+  // Backward compatibility: legacy entries without `enabled` are treated as enabled.
+  return true;
+}
+
 export function resolveRuntimePlatform(): string {
   return process.platform;
 }
@@ -123,7 +135,7 @@ export function shouldIncludeSkill(params: {
   const osList = entry.metadata?.os ?? [];
   const remotePlatforms = eligibility?.remote?.platforms ?? [];
 
-  if (skillConfig?.enabled === false) {
+  if (!isSkillEnabled(skillConfig)) {
     return false;
   }
   if (!isBundledSkillAllowed(entry, allowBundled)) {

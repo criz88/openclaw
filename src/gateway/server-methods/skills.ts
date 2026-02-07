@@ -11,7 +11,7 @@ import { installSkill } from "../../agents/skills-install.js";
 import { buildWorkspaceSkillStatus } from "../../agents/skills-status.js";
 import { loadWorkspaceSkillEntries, type SkillEntry } from "../../agents/skills.js";
 import { resolveSkillKey } from "../../agents/skills/frontmatter.js";
-import { resolveSkillConfig } from "../../agents/skills/config.js";
+import { isSkillEnabled, resolveSkillConfig } from "../../agents/skills/config.js";
 import { loadConfig, writeConfigFile } from "../../config/config.js";
 import { getRemoteSkillEligibility } from "../../infra/skills-remote.js";
 import { normalizeAgentId } from "../../routing/session-key.js";
@@ -78,7 +78,7 @@ function buildSkillList(entries: SkillEntry[], cfg: OpenClawConfig) {
     .map((entry) => {
       const skillKey = resolveSkillKey(entry.skill, entry);
       const skillConfig = resolveSkillConfig(cfg, skillKey);
-      const enabled = skillConfig?.enabled !== false;
+      const enabled = isSkillEnabled(skillConfig);
       const versionRaw =
         typeof (entry.frontmatter as Record<string, unknown>)?.version === "string"
           ? String((entry.frontmatter as Record<string, unknown>).version)
@@ -264,6 +264,54 @@ export const skillsHandlers: GatewayRequestHandlers = {
       }
       current.env = nextEnv;
     }
+
+    // Enabling is only allowed when the skill has all prerequisites satisfied
+    // (deps/API/env/config/os/allowlist). This prevents accidental "enabled but broken" states.
+    if (p.enabled === true) {
+      const previewSkills = skills.entries ? { ...skills.entries } : {};
+      previewSkills[p.skillKey] = current;
+      const previewConfig: OpenClawConfig = {
+        ...cfg,
+        skills: {
+          ...skills,
+          entries: previewSkills,
+        },
+      };
+      const workspaceDir = resolveAgentWorkspaceDir(previewConfig, resolveDefaultAgentId(previewConfig));
+      const report = buildWorkspaceSkillStatus(workspaceDir, {
+        config: previewConfig,
+        eligibility: { remote: getRemoteSkillEligibility() },
+      });
+      const target = report.skills.find((skill) => skill.skillKey === p.skillKey);
+      if (!target) {
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.INVALID_REQUEST, `unknown skill "${p.skillKey}"`),
+        );
+        return;
+      }
+      if (!target.canEnable) {
+        const reasons: string[] = [];
+        if (target.blockedByAllowlist) reasons.push("blocked by allowlist");
+        if (target.missing.bins.length > 0) reasons.push(`missing bins: ${target.missing.bins.join(", ")}`);
+        if (target.missing.anyBins.length > 0)
+          reasons.push(`missing any-bin set: ${target.missing.anyBins.join(", ")}`);
+        if (target.missing.env.length > 0) reasons.push(`missing env: ${target.missing.env.join(", ")}`);
+        if (target.missing.config.length > 0)
+          reasons.push(`missing config: ${target.missing.config.join(", ")}`);
+        if (target.missing.os.length > 0)
+          reasons.push(`unsupported os: ${target.missing.os.join(", ")}`);
+        const reasonText = reasons.length > 0 ? reasons.join("; ") : "requirements not met";
+        respond(
+          false,
+          { ok: false, skillKey: p.skillKey, reason: reasonText },
+          errorShape(ErrorCodes.INVALID_REQUEST, `cannot enable skill: ${reasonText}`),
+        );
+        return;
+      }
+    }
+
     entries[p.skillKey] = current;
     skills.entries = entries;
     const nextConfig: OpenClawConfig = {
@@ -315,6 +363,36 @@ export const skillsHandlers: GatewayRequestHandlers = {
       return;
     }
     await fs.promises.rm(skillPath, { recursive: true, force: true });
-    respond(true, { ok: true, id: p.id, path: skillPath }, undefined);
+
+    const nextSkills = cfg.skills ? { ...cfg.skills } : {};
+    const nextEntries = nextSkills.entries ? { ...nextSkills.entries } : {};
+    const candidateKeys = new Set<string>();
+    candidateKeys.add(p.id);
+    candidateKeys.add(resolveSkillKey(target.skill, target));
+    candidateKeys.add(target.skill.name);
+
+    const deletedConfigKeys: string[] = [];
+    const candidateLower = new Set(
+      [...candidateKeys].map((key) => key.trim().toLowerCase()).filter(Boolean),
+    );
+    for (const key of Object.keys(nextEntries)) {
+      const normalized = key.trim().toLowerCase();
+      if (candidateLower.has(normalized)) {
+        delete nextEntries[key];
+        deletedConfigKeys.push(key);
+      }
+    }
+    nextSkills.entries = nextEntries;
+    const nextConfig: OpenClawConfig = {
+      ...cfg,
+      skills: nextSkills,
+    };
+    await writeConfigFile(nextConfig);
+
+    respond(
+      true,
+      { ok: true, id: p.id, path: skillPath, deletedConfigKeys },
+      undefined,
+    );
   },
 };
