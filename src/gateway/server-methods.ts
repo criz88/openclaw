@@ -35,7 +35,14 @@ const APPROVALS_SCOPE = "operator.approvals";
 const PAIRING_SCOPE = "operator.pairing";
 
 const APPROVAL_METHODS = new Set(["exec.approval.request", "exec.approval.resolve"]);
-const NODE_ROLE_METHODS = new Set(["node.invoke.result", "node.event", "skills.bins"]);
+const NODE_ROLE_METHODS = new Set([
+  "node.invoke.result",
+  "node.event",
+  "skills.bins",
+  // Backward compatibility: older node/companion clients still call this after connect.
+  // Pairing state is enforced by the pairing layer itself.
+  "node.pair.request",
+]);
 const PAIRING_METHODS = new Set([
   "node.pair.request",
   "node.pair.list",
