@@ -32,7 +32,12 @@ const SYSTEM_COMMANDS = [
 const INPUT_COMMANDS = [
   "input.mouse.move",
   "input.mouse.click",
+  "input.scroll",
   "input.keyboard.type",
+  "input.key",
+  "input.keypress",
+  "window.focus",
+  "screen.locate",
 ];
 
 const PLATFORM_DEFAULTS: Record<string, string[]> = {

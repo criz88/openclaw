@@ -9,7 +9,7 @@ import type { OpenClawConfig, ConfigFileSnapshot } from "../config/config.js";
 import type { NodeRegistry } from "./node-registry.js";
 import { CONFIG_PATH, readConfigFileSnapshot, writeConfigFile } from "../config/config.js";
 import { VERSION } from "../version.js";
-import { buildToolsPrompt, listTools } from "./server-methods/tools.js";
+import { listToolDefinitions } from "./server-methods/tools.js";
 import { loadGatewayModelCatalog } from "./server-model-catalog.js";
 import { modelsSetCommand } from "../commands/models/set.js";
 import {
@@ -125,8 +125,6 @@ function extractAssistantTexts(result: any): string[] {
     .filter((t: string) => t.length > 0);
   return texts;
 }
-
-// buildToolsPrompt moved to server-methods/tools.ts
 
 function notFound(res: ServerResponse) {
   sendJson(res, 404, { ok: false, error: "not found" });
@@ -909,20 +907,27 @@ export async function startGatewayAdminPipe(params: {
       const sessionKey = typeof body?.sessionKey === "string" ? body.sessionKey.trim() : "";
       if (!message) return sendJson(res, 400, { ok: false, error: "message required" });
       try {
-        const toolsPrompt = buildToolsPrompt(listTools({ nodeRegistry: params.nodeRegistry }));
+        const toolDefs = listToolDefinitions({ nodeRegistry: params.nodeRegistry });
         const lowered = message.toLowerCase();
         const isToolsQuery = lowered.includes("tools") || lowered.includes("actions") || lowered.includes("可用") || lowered.includes("工具");
-        if (isToolsQuery && toolsPrompt) {
-          return sendJson(res, 200, { ok: true, texts: [toolsPrompt] });
+        if (isToolsQuery && toolDefs.length > 0) {
+          return sendJson(res, 200, {
+            ok: true,
+            tools: toolDefs,
+            texts: [
+              [
+                "Available tools:",
+                ...toolDefs.map((tool) => `- ${tool.name}: ${tool.description}`),
+              ].join("\n"),
+            ],
+          });
         }
-        const extraSystemPrompt = toolsPrompt || undefined;
         const result = await agentCommand(
           {
             message,
             sessionKey: sessionKey || "desktop-chat",
             to: "desktop-chat",
             deliver: false,
-            ...(extraSystemPrompt ? { extraSystemPrompt } : {}),
           },
           defaultRuntime,
         );

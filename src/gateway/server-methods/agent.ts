@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import type { GatewayRequestHandlers } from "./types.js";
 import { listAgentIds } from "../../agents/agent-scope.js";
 import { agentCommand } from "../../commands/agent.js";
-import { listTools, buildToolsPrompt } from "./tools.js";
 import { loadConfig } from "../../config/config.js";
 import {
   resolveAgentIdFromSessionKey,
@@ -42,7 +41,6 @@ import { formatForLog } from "../ws-log.js";
 import { waitForAgentJob } from "./agent-job.js";
 import { injectTimestamp, timestampOptsFromConfig } from "./agent-timestamp.js";
 
-// buildToolsPrompt moved to server-methods/tools.ts
 export const agentHandlers: GatewayRequestHandlers = {
   agent: async ({ params, respond, context }) => {
     const p = params;
@@ -87,13 +85,6 @@ export const agentHandlers: GatewayRequestHandlers = {
       label?: string;
       spawnedBy?: string;
     };
-    const toolsPrompt = buildToolsPrompt(listTools(context));
-    if (toolsPrompt) {
-      const existing = request.extraSystemPrompt?.trim();
-      request.extraSystemPrompt = existing
-        ? `${existing}\n\n${toolsPrompt}`
-        : toolsPrompt;
-    }
     const cfg = loadConfig();
     const idem = request.idempotencyKey;
     const groupIdRaw = typeof request.groupId === "string" ? request.groupId.trim() : "";

@@ -12,7 +12,6 @@ import { createReplyDispatcher } from "../../auto-reply/reply/reply-dispatcher.j
 import { createReplyPrefixOptions } from "../../channels/reply-prefix.js";
 import { resolveSendPolicy } from "../../sessions/send-policy.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../../utils/message-channel.js";
-import { buildToolsPrompt, listTools } from "./tools.js";
 import {
   abortChatRunById,
   abortChatRunsForSessionKey,
@@ -451,14 +450,9 @@ export const chatHandlers: GatewayRequestHandlers = {
       // See: https://github.com/moltbot/moltbot/issues/3658
       const stampedMessage = injectTimestamp(parsedMessage, timestampOptsFromConfig(cfg));
 
-      const tools = listTools(context);
-      const toolsPrompt = buildToolsPrompt(tools);
-      const groupSystemPrompt = toolsPrompt || undefined;
-      const toolsPrelude = toolsPrompt ? `${toolsPrompt}\n\n` : "";
-
       const ctx: MsgContext = {
         Body: parsedMessage,
-        BodyForAgent: `${toolsPrelude}${stampedMessage}`,
+        BodyForAgent: stampedMessage,
         BodyForCommands: commandBody,
         RawBody: parsedMessage,
         CommandBody: commandBody,
@@ -473,7 +467,6 @@ export const chatHandlers: GatewayRequestHandlers = {
         SenderName: clientInfo?.displayName,
         SenderUsername: clientInfo?.displayName,
         GatewayClientScopes: client?.connect?.scopes,
-        GroupSystemPrompt: groupSystemPrompt,
       };
 
       const agentId = resolveSessionAgentId({
