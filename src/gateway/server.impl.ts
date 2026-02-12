@@ -58,7 +58,7 @@ import { coreGatewayHandlers } from "./server-methods.js";
 import { createExecApprovalHandlers } from "./server-methods/exec-approval.js";
 import { safeParseJson } from "./server-methods/nodes.helpers.js";
 import { hasConnectedMobileNode } from "./server-mobile-nodes.js";
-import { loadGatewayModelCatalog } from "./server-model-catalog.js";
+import { loadGatewayModelCatalog, refreshGatewayModelCatalogCache } from "./server-model-catalog.js";
 import { createNodeSubscriptionManager } from "./server-node-subscriptions.js";
 import { loadGatewayPlugins } from "./server-plugins.js";
 import { createGatewayReloadHandlers } from "./server-reload-handlers.js";
@@ -219,6 +219,15 @@ export async function startGatewayServer(
   }
 
   const cfgAtStart = loadConfig();
+  void refreshGatewayModelCatalogCache()
+    .then((models) => {
+      if (models.length > 0) {
+        log.info(`gateway: model catalog cache refreshed (${models.length} models)`);
+      }
+    })
+    .catch((err) => {
+      log.warn(`gateway: model catalog cache refresh failed: ${String(err)}`);
+    });
   const diagnosticsEnabled = isDiagnosticsEnabled(cfgAtStart);
   if (diagnosticsEnabled) {
     startDiagnosticHeartbeat();
