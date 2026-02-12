@@ -18,6 +18,13 @@ const authMocks = vi.hoisted(() => ({
   loadAuthProfileStore: vi.fn(),
 }));
 
+const pairingStoreMocks = vi.hoisted(() => ({
+  clearChannelPairingHistory: vi.fn().mockResolvedValue({
+    requestsCleared: true,
+    allowFromCleared: true,
+  }),
+}));
+
 vi.mock("../config/config.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../config/config.js")>();
   return {
@@ -32,6 +39,14 @@ vi.mock("../agents/auth-profiles.js", async (importOriginal) => {
   return {
     ...actual,
     loadAuthProfileStore: authMocks.loadAuthProfileStore,
+  };
+});
+
+vi.mock("../pairing/pairing-store.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../pairing/pairing-store.js")>();
+  return {
+    ...actual,
+    clearChannelPairingHistory: pairingStoreMocks.clearChannelPairingHistory,
   };
 });
 
@@ -64,6 +79,7 @@ describe("channels command", () => {
     configMocks.readConfigFileSnapshot.mockReset();
     configMocks.writeConfigFile.mockClear();
     authMocks.loadAuthProfileStore.mockReset();
+    pairingStoreMocks.clearChannelPairingHistory.mockClear();
     runtime.log.mockClear();
     runtime.error.mockClear();
     runtime.exit.mockClear();
@@ -155,6 +171,9 @@ describe("channels command", () => {
     };
     expect(next.channels?.discord?.accounts?.work).toBeUndefined();
     expect(next.channels?.discord?.accounts?.default?.token).toBe("d0");
+    expect(pairingStoreMocks.clearChannelPairingHistory).toHaveBeenCalledWith({
+      channel: "discord",
+    });
   });
 
   it("adds a named WhatsApp account", async () => {
@@ -232,6 +251,7 @@ describe("channels command", () => {
       channels?: { discord?: { enabled?: boolean } };
     };
     expect(next.channels?.discord?.enabled).toBe(false);
+    expect(pairingStoreMocks.clearChannelPairingHistory).not.toHaveBeenCalled();
     promptSpy.mockRestore();
   });
 

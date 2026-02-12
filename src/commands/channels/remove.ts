@@ -5,6 +5,7 @@ import {
   normalizeChannelId,
 } from "../../channels/plugins/index.js";
 import { type OpenClawConfig, writeConfigFile } from "../../config/config.js";
+import { clearChannelPairingHistory } from "../../pairing/pairing-store.js";
 import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "../../routing/session-key.js";
 import { defaultRuntime, type RuntimeEnv } from "../../runtime.js";
 import { createClackPrompter } from "../../wizard/clack-prompter.js";
@@ -14,6 +15,8 @@ export type ChannelsRemoveOptions = {
   channel?: string;
   account?: string;
   delete?: boolean;
+  purgePairing?: boolean;
+  purgeAuth?: boolean;
 };
 
 function listAccountIds(cfg: OpenClawConfig, channel: ChatChannel): string[] {
@@ -39,6 +42,8 @@ export async function channelsRemoveCommand(
   let channel: ChatChannel | null = normalizeChannelId(opts.channel);
   let accountId = normalizeAccountId(opts.account);
   const deleteConfig = Boolean(opts.delete);
+  const purgePairing =
+    deleteConfig && (opts.purgePairing ?? opts.purgeAuth ?? true) !== false;
 
   if (useWizard && prompter) {
     await prompter.intro("Remove channel account");
@@ -126,6 +131,25 @@ export async function channelsRemoveCommand(
   }
 
   await writeConfigFile(next);
+  if (purgePairing) {
+    try {
+      const cleared = await clearChannelPairingHistory({ channel });
+      if (cleared.allowFromCleared || cleared.requestsCleared) {
+        runtime.log(
+          `Cleared pairing history for ${channelLabel(channel)} (${[
+            cleared.allowFromCleared ? "allowFrom" : "",
+            cleared.requestsCleared ? "pending" : "",
+          ]
+            .filter(Boolean)
+            .join(", ")}).`,
+        );
+      }
+    } catch (err) {
+      runtime.error(
+        `Failed to clear pairing history for ${channelLabel(channel)}: ${String(err)}`,
+      );
+    }
+  }
   if (useWizard && prompter) {
     await prompter.outro(
       deleteConfig

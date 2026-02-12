@@ -494,3 +494,51 @@ export async function approveChannelPairingCode(params: {
     },
   );
 }
+
+export async function clearChannelPairingHistory(params: {
+  channel: PairingChannel;
+  env?: NodeJS.ProcessEnv;
+}): Promise<{ requestsCleared: boolean; allowFromCleared: boolean }> {
+  const env = params.env ?? process.env;
+  const pairingPath = resolvePairingPath(params.channel, env);
+  const allowFromPath = resolveAllowFromPath(params.channel, env);
+
+  let requestsCleared = false;
+  await withFileLock(
+    pairingPath,
+    { version: 1, requests: [] } satisfies PairingStore,
+    async () => {
+      const { value } = await readJsonFile<PairingStore>(pairingPath, {
+        version: 1,
+        requests: [],
+      });
+      requestsCleared = Array.isArray(value.requests) && value.requests.length > 0;
+      await writeJsonFile(pairingPath, {
+        version: 1,
+        requests: [],
+      } satisfies PairingStore);
+    },
+  );
+
+  let allowFromCleared = false;
+  await withFileLock(
+    allowFromPath,
+    { version: 1, allowFrom: [] } satisfies AllowFromStore,
+    async () => {
+      const { value } = await readJsonFile<AllowFromStore>(allowFromPath, {
+        version: 1,
+        allowFrom: [],
+      });
+      const current = (Array.isArray(value.allowFrom) ? value.allowFrom : [])
+        .map((v) => normalizeAllowEntry(params.channel, String(v)))
+        .filter(Boolean);
+      allowFromCleared = current.length > 0;
+      await writeJsonFile(allowFromPath, {
+        version: 1,
+        allowFrom: [],
+      } satisfies AllowFromStore);
+    },
+  );
+
+  return { requestsCleared, allowFromCleared };
+}
