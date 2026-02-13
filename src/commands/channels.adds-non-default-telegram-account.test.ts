@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RuntimeEnv } from "../runtime.js";
 import { discordPlugin } from "../../extensions/discord/src/channel.js";
+import { feishuPlugin } from "../../extensions/feishu/src/channel.js";
 import { imessagePlugin } from "../../extensions/imessage/src/channel.js";
+import { linePlugin } from "../../extensions/line/src/channel.js";
+import { nextcloudTalkPlugin } from "../../extensions/nextcloud-talk/src/channel.js";
 import { signalPlugin } from "../../extensions/signal/src/channel.js";
 import { slackPlugin } from "../../extensions/slack/src/channel.js";
 import { telegramPlugin } from "../../extensions/telegram/src/channel.js";
@@ -95,6 +98,9 @@ describe("channels command", () => {
         { pluginId: "whatsapp", plugin: whatsappPlugin, source: "test" },
         { pluginId: "signal", plugin: signalPlugin, source: "test" },
         { pluginId: "imessage", plugin: imessagePlugin, source: "test" },
+        { pluginId: "feishu", plugin: feishuPlugin, source: "test" },
+        { pluginId: "line", plugin: linePlugin, source: "test" },
+        { pluginId: "nextcloud-talk", plugin: nextcloudTalkPlugin, source: "test" },
       ]),
     );
   });
@@ -144,6 +150,102 @@ describe("channels command", () => {
     expect(next.channels?.slack?.appToken).toBe("xapp-1");
   });
 
+  it("persists Feishu app credentials via channels add", async () => {
+    configMocks.readConfigFileSnapshot.mockResolvedValue({ ...baseSnapshot });
+    await channelsAddCommand(
+      {
+        channel: "feishu",
+        account: "default",
+        appId: "cli_a11",
+        appSecret: "sec_22",
+      },
+      runtime,
+      { hasFlags: true },
+    );
+
+    expect(configMocks.writeConfigFile).toHaveBeenCalledTimes(1);
+    const next = configMocks.writeConfigFile.mock.calls[0]?.[0] as {
+      channels?: {
+        feishu?: { enabled?: boolean; appId?: string; appSecret?: string };
+      };
+    };
+    expect(next.channels?.feishu?.enabled).toBe(true);
+    expect(next.channels?.feishu?.appId).toBe("cli_a11");
+    expect(next.channels?.feishu?.appSecret).toBe("sec_22");
+  });
+
+  it("persists LINE channel credentials via channels add", async () => {
+    configMocks.readConfigFileSnapshot.mockResolvedValue({ ...baseSnapshot });
+    await channelsAddCommand(
+      {
+        channel: "line",
+        account: "default",
+        channelAccessToken: "line_tok",
+        channelSecret: "line_sec",
+      },
+      runtime,
+      { hasFlags: true },
+    );
+
+    expect(configMocks.writeConfigFile).toHaveBeenCalledTimes(1);
+    const next = configMocks.writeConfigFile.mock.calls[0]?.[0] as {
+      channels?: {
+        line?: { enabled?: boolean; channelAccessToken?: string; channelSecret?: string };
+      };
+    };
+    expect(next.channels?.line?.enabled).toBe(true);
+    expect(next.channels?.line?.channelAccessToken).toBe("line_tok");
+    expect(next.channels?.line?.channelSecret).toBe("line_sec");
+  });
+
+  it("persists Nextcloud Talk baseUrl and secret via channels add", async () => {
+    configMocks.readConfigFileSnapshot.mockResolvedValue({ ...baseSnapshot });
+    await channelsAddCommand(
+      {
+        channel: "nextcloud-talk",
+        account: "default",
+        baseUrl: "https://nc.example.com",
+        secret: "nc_secret",
+      },
+      runtime,
+      { hasFlags: true },
+    );
+
+    expect(configMocks.writeConfigFile).toHaveBeenCalledTimes(1);
+    const next = configMocks.writeConfigFile.mock.calls[0]?.[0] as {
+      channels?: {
+        "nextcloud-talk"?: { enabled?: boolean; baseUrl?: string; botSecret?: string };
+      };
+    };
+    expect(next.channels?.["nextcloud-talk"]?.enabled).toBe(true);
+    expect(next.channels?.["nextcloud-talk"]?.baseUrl).toBe("https://nc.example.com");
+    expect(next.channels?.["nextcloud-talk"]?.botSecret).toBe("nc_secret");
+  });
+
+  it("accepts allowFrom array payloads and persists them", async () => {
+    configMocks.readConfigFileSnapshot.mockResolvedValue({ ...baseSnapshot });
+    await channelsAddCommand(
+      {
+        channel: "telegram",
+        account: "default",
+        token: "123:abc",
+        dmPolicy: "allowlist",
+        allowFrom: ["@alice", "10001"],
+      },
+      runtime,
+      { hasFlags: true },
+    );
+
+    expect(configMocks.writeConfigFile).toHaveBeenCalledTimes(1);
+    const next = configMocks.writeConfigFile.mock.calls[0]?.[0] as {
+      channels?: {
+        telegram?: { dmPolicy?: string; allowFrom?: string[] };
+      };
+    };
+    expect(next.channels?.telegram?.dmPolicy).toBe("allowlist");
+    expect(next.channels?.telegram?.allowFrom).toEqual(["@alice", "10001"]);
+  });
+
   it("deletes a non-default discord account", async () => {
     configMocks.readConfigFileSnapshot.mockResolvedValue({
       ...baseSnapshot,
@@ -190,6 +292,114 @@ describe("channels command", () => {
       };
     };
     expect(next.channels?.whatsapp?.accounts?.family?.name).toBe("Family Phone");
+  });
+
+  it("stores WhatsApp account policies on non-default account and keeps actions at channel root", async () => {
+    configMocks.readConfigFileSnapshot.mockResolvedValue({
+      ...baseSnapshot,
+      config: {
+        channels: {
+          whatsapp: {
+            accounts: {
+              family: { name: "Family Phone" },
+            },
+          },
+        },
+      },
+    });
+    await channelsAddCommand(
+      {
+        channel: "whatsapp",
+        account: "family",
+        dmPolicy: "allowlist",
+        groupPolicy: "allowlist",
+        allowFrom: ["+15550001111"],
+        actions: { reactions: false },
+      },
+      runtime,
+      { hasFlags: true },
+    );
+
+    const next = configMocks.writeConfigFile.mock.calls[0]?.[0] as {
+      channels?: {
+        whatsapp?: {
+          dmPolicy?: string;
+          actions?: { reactions?: boolean };
+          accounts?: Record<string, { dmPolicy?: string; groupPolicy?: string; allowFrom?: string[] }>;
+        };
+      };
+    };
+    expect(next.channels?.whatsapp?.dmPolicy).toBeUndefined();
+    expect(next.channels?.whatsapp?.actions?.reactions).toBe(false);
+    expect(next.channels?.whatsapp?.accounts?.family?.dmPolicy).toBe("allowlist");
+    expect(next.channels?.whatsapp?.accounts?.family?.groupPolicy).toBe("allowlist");
+    expect(next.channels?.whatsapp?.accounts?.family?.allowFrom).toEqual(["+15550001111"]);
+  });
+
+  it("allows clearing WhatsApp allowFrom with an empty array payload", async () => {
+    configMocks.readConfigFileSnapshot.mockResolvedValue({
+      ...baseSnapshot,
+      config: {
+        channels: {
+          whatsapp: {
+            accounts: {
+              family: { allowFrom: ["+15550001111"] },
+            },
+          },
+        },
+      },
+    });
+    await channelsAddCommand(
+      {
+        channel: "whatsapp",
+        account: "family",
+        allowFrom: [],
+      },
+      runtime,
+      { hasFlags: true },
+    );
+
+    const next = configMocks.writeConfigFile.mock.calls[0]?.[0] as {
+      channels?: {
+        whatsapp?: {
+          accounts?: Record<string, { allowFrom?: string[] }>;
+        };
+      };
+    };
+    expect(next.channels?.whatsapp?.accounts?.family?.allowFrom).toEqual([]);
+  });
+
+  it("clears WhatsApp account authDir when an empty authDir is provided", async () => {
+    configMocks.readConfigFileSnapshot.mockResolvedValue({
+      ...baseSnapshot,
+      config: {
+        channels: {
+          whatsapp: {
+            accounts: {
+              family: { authDir: "/tmp/wa-family" },
+            },
+          },
+        },
+      },
+    });
+    await channelsAddCommand(
+      {
+        channel: "whatsapp",
+        account: "family",
+        authDir: "",
+      },
+      runtime,
+      { hasFlags: true },
+    );
+
+    const next = configMocks.writeConfigFile.mock.calls[0]?.[0] as {
+      channels?: {
+        whatsapp?: {
+          accounts?: Record<string, { authDir?: string }>;
+        };
+      };
+    };
+    expect(next.channels?.whatsapp?.accounts?.family?.authDir).toBeUndefined();
   });
 
   it("adds a second signal account with a distinct name", async () => {

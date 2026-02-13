@@ -54,6 +54,17 @@ export function applyChannelAccountConfig(params: {
   dmAllowlist?: string[];
   autoDiscoverChannels?: boolean;
   groupPolicy?: string;
+  baseUrl?: string;
+  secret?: string;
+  secretFile?: string;
+  webhookSecret?: string;
+  profile?: string;
+  appId?: string;
+  appSecret?: string;
+  appSecretFile?: string;
+  domain?: string;
+  channelAccessToken?: string;
+  channelSecret?: string;
   extraInput?: Record<string, unknown>;
 }): OpenClawConfig {
   const accountId = normalizeAccountId(params.accountId);
@@ -96,6 +107,17 @@ export function applyChannelAccountConfig(params: {
     dmAllowlist: params.dmAllowlist,
     autoDiscoverChannels: params.autoDiscoverChannels,
     groupPolicy: params.groupPolicy,
+    baseUrl: params.baseUrl,
+    secret: params.secret,
+    secretFile: params.secretFile,
+    webhookSecret: params.webhookSecret,
+    profile: params.profile,
+    appId: params.appId,
+    appSecret: params.appSecret,
+    appSecretFile: params.appSecretFile,
+    domain: params.domain,
+    channelAccessToken: params.channelAccessToken,
+    channelSecret: params.channelSecret,
     ...(params.extraInput ?? {}),
   };
   return apply({ cfg: params.cfg, accountId, input });

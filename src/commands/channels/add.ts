@@ -47,11 +47,11 @@ export type ChannelsAddOptions = {
   url?: string;
   code?: string;
   selfChatMode?: boolean;
-  groupChannels?: string;
-  dmAllowlist?: string;
+  groupChannels?: string | string[];
+  dmAllowlist?: string | string[];
   dmPolicy?: string;
   groupPolicy?: string;
-  allowFrom?: string;
+  allowFrom?: string | string[];
   autoDiscoverChannels?: boolean;
   baseUrl?: string;
   secret?: string;
@@ -67,15 +67,115 @@ export type ChannelsAddOptions = {
   [key: string]: unknown;
 };
 
-function parseList(value: string | undefined): string[] | undefined {
-  if (!value?.trim()) {
+function parseList(value: unknown): string[] | undefined {
+  let rawParts: string[] = [];
+  if (Array.isArray(value)) {
+    rawParts = value.flatMap((entry) => String(entry ?? "").split(/[\n,;]+/g));
+    return rawParts.map((entry) => entry.trim()).filter(Boolean);
+  } else if (typeof value === "string") {
+    rawParts = value.split(/[\n,;]+/g);
+  } else {
     return undefined;
   }
-  const parsed = value
-    .split(/[\n,;]+/g)
-    .map((entry) => entry.trim())
-    .filter(Boolean);
+  const parsed = rawParts.map((entry) => entry.trim()).filter(Boolean);
   return parsed.length > 0 ? parsed : undefined;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function deepMergeObjects(
+  base: Record<string, unknown>,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) {
+      continue;
+    }
+    const current = next[key];
+    if (isPlainObject(current) && isPlainObject(value)) {
+      next[key] = deepMergeObjects(current, value);
+      continue;
+    }
+    next[key] = value;
+  }
+  return next;
+}
+
+function applyExtraChannelInputConfig(params: {
+  cfg: OpenClawConfig;
+  channel: ChannelId;
+  accountId: string;
+  extraInput?: Record<string, unknown>;
+}): OpenClawConfig {
+  const extra = params.extraInput ?? {};
+  if (Object.keys(extra).length === 0) {
+    return params.cfg;
+  }
+
+  const channelKey = String(params.channel);
+  const channels = (params.cfg.channels ?? {}) as Record<string, unknown>;
+  const currentChannelEntry = channels[channelKey];
+  const channelConfig = isPlainObject(currentChannelEntry) ? currentChannelEntry : {};
+  let channelExtra: Record<string, unknown> = {};
+  let accountExtra = extra;
+
+  // WhatsApp actions.* is channel-scoped even when editing non-default accounts.
+  if (
+    channelKey === "whatsapp" &&
+    params.accountId !== DEFAULT_ACCOUNT_ID &&
+    isPlainObject(extra.actions)
+  ) {
+    channelExtra = { actions: extra.actions };
+    accountExtra = Object.fromEntries(Object.entries(extra).filter(([key]) => key !== "actions"));
+  }
+
+  if (params.accountId !== DEFAULT_ACCOUNT_ID) {
+    const nextChannelConfig =
+      Object.keys(channelExtra).length > 0 ? deepMergeObjects(channelConfig, channelExtra) : channelConfig;
+    if (Object.keys(accountExtra).length === 0) {
+      if (Object.keys(channelExtra).length === 0) {
+        return params.cfg;
+      }
+      return {
+        ...params.cfg,
+        channels: {
+          ...params.cfg.channels,
+          [channelKey]: nextChannelConfig,
+        },
+      } as OpenClawConfig;
+    }
+    const existingAccounts = isPlainObject(channelConfig.accounts)
+      ? (channelConfig.accounts as Record<string, unknown>)
+      : {};
+    const currentAccountEntry = existingAccounts[params.accountId];
+    const accountConfig = isPlainObject(currentAccountEntry) ? currentAccountEntry : {};
+    const nextAccountConfig = deepMergeObjects(accountConfig, accountExtra);
+    return {
+      ...params.cfg,
+      channels: {
+        ...params.cfg.channels,
+        [channelKey]: {
+          ...nextChannelConfig,
+          accounts: {
+            ...existingAccounts,
+            [params.accountId]: nextAccountConfig,
+          },
+        },
+      },
+    } as OpenClawConfig;
+  }
+
+  const nextChannelConfig = deepMergeObjects(channelConfig, extra);
+  return {
+    ...params.cfg,
+    channels: {
+      ...params.cfg.channels,
+      [channelKey]: nextChannelConfig,
+    },
+  } as OpenClawConfig;
 }
 
 function resolveCatalogChannelEntry(raw: string, cfg: OpenClawConfig | null) {
@@ -198,6 +298,7 @@ export async function channelsAddCommand(
   const accountId =
     plugin.setup.resolveAccountId?.({ cfg: nextConfig, accountId: opts.account }) ??
     normalizeAccountId(opts.account);
+  const accountKey = accountId || DEFAULT_ACCOUNT_ID;
   const useEnv = opts.useEnv === true;
   const initialSyncLimit =
     typeof opts.initialSyncLimit === "number"
@@ -368,13 +469,50 @@ export async function channelsAddCommand(
     dmAllowlist,
     groupPolicy: opts.groupPolicy,
     autoDiscoverChannels: opts.autoDiscoverChannels,
+    baseUrl: opts.baseUrl,
+    secret: opts.secret,
+    secretFile: opts.secretFile,
+    webhookSecret: opts.webhookSecret,
+    profile: opts.profile,
+    appId: opts.appId,
+    appSecret: opts.appSecret,
+    appSecretFile: opts.appSecretFile,
+    domain: opts.domain,
+    channelAccessToken: opts.channelAccessToken,
+    channelSecret: opts.channelSecret,
+    extraInput,
+  });
+  nextConfig = applyExtraChannelInputConfig({
+    cfg: nextConfig,
+    channel,
+    accountId,
     extraInput,
   });
 
-  if (opts.dmPolicy || allowFrom) {
+  if (opts.dmPolicy || allowFrom !== undefined) {
     const dmPolicy = opts.dmPolicy?.trim();
     const allowFromList = allowFrom;
-    if (channel === "discord" || channel === "slack") {
+    const setDmPolicy = Boolean(dmPolicy);
+    const setAllowFrom = allowFromList !== undefined;
+    if (channel === "whatsapp" && accountKey !== DEFAULT_ACCOUNT_ID) {
+      nextConfig = {
+        ...nextConfig,
+        channels: {
+          ...nextConfig.channels,
+          [channel]: {
+            ...(nextConfig.channels as any)?.[channel],
+            accounts: {
+              ...((nextConfig.channels as any)?.[channel]?.accounts ?? {}),
+              [accountKey]: {
+                ...((nextConfig.channels as any)?.[channel]?.accounts?.[accountKey] ?? {}),
+                ...(setDmPolicy ? { dmPolicy } : {}),
+                ...(setAllowFrom ? { allowFrom: allowFromList } : {}),
+              },
+            },
+          },
+        },
+      } as typeof nextConfig;
+    } else if (channel === "discord" || channel === "slack") {
       nextConfig = {
         ...nextConfig,
         channels: {
@@ -383,8 +521,8 @@ export async function channelsAddCommand(
             ...(nextConfig.channels as any)?.[channel],
             dm: {
               ...((nextConfig.channels as any)?.[channel]?.dm ?? {}),
-              ...(dmPolicy ? { policy: dmPolicy } : {}),
-              ...(allowFromList ? { allowFrom: allowFromList } : {}),
+              ...(setDmPolicy ? { policy: dmPolicy } : {}),
+              ...(setAllowFrom ? { allowFrom: allowFromList } : {}),
             },
           },
         },
@@ -396,8 +534,8 @@ export async function channelsAddCommand(
           ...nextConfig.channels,
           [channel]: {
             ...(nextConfig.channels as any)?.[channel],
-            ...(dmPolicy ? { dmPolicy } : {}),
-            ...(allowFromList ? { allowFrom: allowFromList } : {}),
+            ...(setDmPolicy ? { dmPolicy } : {}),
+            ...(setAllowFrom ? { allowFrom: allowFromList } : {}),
           },
         },
       } as typeof nextConfig;
@@ -406,8 +544,24 @@ export async function channelsAddCommand(
 
   if (opts.groupPolicy?.trim()) {
     const groupPolicy = opts.groupPolicy.trim();
-    const accountKey = accountId || DEFAULT_ACCOUNT_ID;
-    if (channel === "discord" || channel === "slack") {
+    if (channel === "whatsapp" && accountKey !== DEFAULT_ACCOUNT_ID) {
+      nextConfig = {
+        ...nextConfig,
+        channels: {
+          ...nextConfig.channels,
+          [channel]: {
+            ...(nextConfig.channels as any)?.[channel],
+            accounts: {
+              ...((nextConfig.channels as any)?.[channel]?.accounts ?? {}),
+              [accountKey]: {
+                ...((nextConfig.channels as any)?.[channel]?.accounts?.[accountKey] ?? {}),
+                groupPolicy,
+              },
+            },
+          },
+        },
+      } as typeof nextConfig;
+    } else if (channel === "discord" || channel === "slack") {
       if (accountKey === DEFAULT_ACCOUNT_ID) {
         nextConfig = {
           ...nextConfig,

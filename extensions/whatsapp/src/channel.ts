@@ -191,11 +191,18 @@ export const whatsappPlugin: ChannelPlugin<ResolvedWhatsAppAccount> = {
         string,
         unknown
       >;
-      const entry = {
+      const entry: Record<string, unknown> = {
         ...entryBase,
-        ...(input.authDir ? { authDir: input.authDir } : {}),
         enabled: true,
       };
+      if (typeof input.authDir === "string") {
+        const nextAuthDir = input.authDir.trim();
+        if (nextAuthDir) {
+          entry.authDir = nextAuthDir;
+        } else {
+          delete entry.authDir;
+        }
+      }
       return {
         ...next,
         channels: {

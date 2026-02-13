@@ -1,10 +1,12 @@
 import {
+  applyAccountNameToChannelSection,
   buildChannelConfigSchema,
   DEFAULT_ACCOUNT_ID,
   deleteAccountFromConfigSection,
   feishuOutbound,
   formatPairingApproveHint,
   listFeishuAccountIds,
+  normalizeAccountId,
   monitorFeishuProvider,
   normalizeFeishuTarget,
   PAIRING_APPROVED_MESSAGE,
@@ -114,6 +116,80 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
         .filter(Boolean)
         .map((entry) => (entry === "*" ? entry : normalizeAllowEntry(entry)))
         .map((entry) => (entry === "*" ? entry : entry.toLowerCase())),
+  },
+  setup: {
+    resolveAccountId: ({ accountId }) => normalizeAccountId(accountId),
+    applyAccountName: ({ cfg, accountId, name }) =>
+      applyAccountNameToChannelSection({
+        cfg: cfg,
+        channelKey: "feishu",
+        accountId,
+        name,
+      }),
+    validateInput: ({ cfg, accountId, input }) => {
+      const existing = resolveFeishuAccount({ cfg, accountId });
+      const appId = String(input.appId ?? existing.config.appId ?? "").trim();
+      const appSecret = String(input.appSecret ?? existing.config.appSecret ?? "").trim();
+      const appSecretFile = String(input.appSecretFile ?? existing.config.appSecretFile ?? "").trim();
+      if (!appId) {
+        return "Feishu requires appId.";
+      }
+      if (!appSecret && !appSecretFile) {
+        return "Feishu requires appSecret or appSecretFile.";
+      }
+      return null;
+    },
+    applyAccountConfig: ({ cfg, accountId, input }) => {
+      const namedConfig = applyAccountNameToChannelSection({
+        cfg: cfg,
+        channelKey: "feishu",
+        accountId,
+        name: input.name,
+      });
+      const appId = String(input.appId ?? "").trim();
+      const appSecret = String(input.appSecret ?? "").trim();
+      const appSecretFile = String(input.appSecretFile ?? "").trim();
+      const domain = String(input.domain ?? "").trim();
+      const patch = {
+        ...(appId ? { appId } : {}),
+        ...(appSecret ? { appSecret } : {}),
+        ...(appSecretFile ? { appSecretFile } : {}),
+        ...(domain ? { domain } : {}),
+      };
+
+      if (accountId === DEFAULT_ACCOUNT_ID) {
+        return {
+          ...namedConfig,
+          channels: {
+            ...namedConfig.channels,
+            feishu: {
+              ...namedConfig.channels?.feishu,
+              enabled: true,
+              ...patch,
+            },
+          },
+        };
+      }
+
+      return {
+        ...namedConfig,
+        channels: {
+          ...namedConfig.channels,
+          feishu: {
+            ...namedConfig.channels?.feishu,
+            enabled: true,
+            accounts: {
+              ...namedConfig.channels?.feishu?.accounts,
+              [accountId]: {
+                ...namedConfig.channels?.feishu?.accounts?.[accountId],
+                enabled: true,
+                ...patch,
+              },
+            },
+          },
+        },
+      };
+    },
   },
   security: {
     resolveDmPolicy: ({ cfg, accountId, account }) => {
