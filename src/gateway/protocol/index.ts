@@ -147,6 +147,21 @@ import {
   type McpProvidersApplyParams,
   McpProvidersApplyParamsSchema,
   type McpProvidersApplyResult,
+  type McpMarketSearchParams,
+  McpMarketSearchParamsSchema,
+  type McpMarketSearchResult,
+  type McpMarketDetailParams,
+  McpMarketDetailParamsSchema,
+  type McpMarketDetailResult,
+  type McpMarketInstallParams,
+  McpMarketInstallParamsSchema,
+  type McpMarketInstallResult,
+  type McpMarketUninstallParams,
+  McpMarketUninstallParamsSchema,
+  type McpMarketUninstallResult,
+  type McpMarketRefreshParams,
+  McpMarketRefreshParamsSchema,
+  type McpMarketRefreshResult,
   type McpProvidersSnapshotParams,
   McpProvidersSnapshotParamsSchema,
   type McpProvidersSnapshotResult,
@@ -157,6 +172,10 @@ import {
   ModelsTestResultSchema,
   type ToolsListParams,
   ToolsListParamsSchema,
+  type ToolsCallParams,
+  ToolsCallParamsSchema,
+  type ToolsCallResult,
+  ToolsCallResultSchema,
   type ToolsListResult,
   ToolsListResultSchema,
   type NodeDescribeParams,
@@ -372,6 +391,7 @@ export const validateOverviewSummaryParams = ajv.compile<OverviewSummaryParams>(
 export const validateModelsListParams = ajv.compile<ModelsListParams>(ModelsListParamsSchema);
 export const validateModelsTestParams = ajv.compile<ModelsTestParams>(ModelsTestParamsSchema);
 export const validateToolsListParams = ajv.compile<ToolsListParams>(ToolsListParamsSchema);
+export const validateToolsCallParams = ajv.compile<ToolsCallParams>(ToolsCallParamsSchema);
 export const validateMcpPresetsListParams = ajv.compile<McpPresetsListParams>(
   McpPresetsListParamsSchema,
 );
@@ -380,6 +400,21 @@ export const validateMcpProvidersSnapshotParams = ajv.compile<McpProvidersSnapsh
 );
 export const validateMcpProvidersApplyParams = ajv.compile<McpProvidersApplyParams>(
   McpProvidersApplyParamsSchema,
+);
+export const validateMcpMarketSearchParams = ajv.compile<McpMarketSearchParams>(
+  McpMarketSearchParamsSchema,
+);
+export const validateMcpMarketDetailParams = ajv.compile<McpMarketDetailParams>(
+  McpMarketDetailParamsSchema,
+);
+export const validateMcpMarketInstallParams = ajv.compile<McpMarketInstallParams>(
+  McpMarketInstallParamsSchema,
+);
+export const validateMcpMarketUninstallParams = ajv.compile<McpMarketUninstallParams>(
+  McpMarketUninstallParamsSchema,
+);
+export const validateMcpMarketRefreshParams = ajv.compile<McpMarketRefreshParams>(
+  McpMarketRefreshParamsSchema,
 );
 export const validateSkillsStatusParams = ajv.compile<SkillsStatusParams>(SkillsStatusParamsSchema);
 export const validateSkillsListParams = ajv.compile<SkillsListParams>(SkillsListParamsSchema);
@@ -553,10 +588,17 @@ export {
   ModelsTestParamsSchema,
   ModelsTestResultSchema,
   ToolsListParamsSchema,
+  ToolsCallParamsSchema,
+  ToolsCallResultSchema,
   ToolsListResultSchema,
   McpPresetsListParamsSchema,
   McpProvidersSnapshotParamsSchema,
   McpProvidersApplyParamsSchema,
+  McpMarketSearchParamsSchema,
+  McpMarketDetailParamsSchema,
+  McpMarketInstallParamsSchema,
+  McpMarketUninstallParamsSchema,
+  McpMarketRefreshParamsSchema,
   SkillsStatusParamsSchema,
   SkillsListParamsSchema,
   SkillsListResultSchema,
@@ -657,6 +699,8 @@ export type {
   ModelsTestParams,
   ModelsTestResult,
   ToolDefinition,
+  ToolsCallParams,
+  ToolsCallResult,
   ToolsListParams,
   ToolsListResult,
   McpPresetsListParams,
@@ -671,6 +715,16 @@ export type {
   McpProvidersApplyParams,
   McpFieldError,
   McpProvidersApplyResult,
+  McpMarketSearchParams,
+  McpMarketSearchResult,
+  McpMarketDetailParams,
+  McpMarketDetailResult,
+  McpMarketInstallParams,
+  McpMarketInstallResult,
+  McpMarketUninstallParams,
+  McpMarketUninstallResult,
+  McpMarketRefreshParams,
+  McpMarketRefreshResult,
   SkillsStatusParams,
   SkillsListParams,
   SkillsListResult,

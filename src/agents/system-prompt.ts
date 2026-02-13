@@ -233,7 +233,8 @@ export function buildAgentSystemPrompt(params: {
     nodes: "List/describe/notify/camera/screen on paired nodes",
     cron: "Manage cron jobs and wake events (use for reminders; when scheduling a reminder, write the systemEvent text as something that will read like a reminder when it fires, and mention that it is a reminder depending on the time gap between setting and firing; include recent context in reminder text if appropriate)",
     message: "Send messages and channel actions",
-    gateway: "Restart, apply config, or run updates on the running OpenClaw process",
+    gateway:
+      "Manage gateway config/update/restart and discover or invoke MCP/provider tools via tools.list/tools.call",
     agents_list: "List agent ids allowed for sessions_spawn",
     sessions_list: "List other sessions (incl. sub-agents) with filters/last",
     sessions_history: "Fetch history for another session/sub-agent",
@@ -427,8 +428,9 @@ export function buildAgentSystemPrompt(params: {
     hasGateway && !isMinimal
       ? [
           "Get Updates (self-update) is ONLY allowed when the user explicitly asks for it.",
-          "Do not run config.apply or update.run unless the user explicitly requests an update or config change; if it's not explicit, ask first.",
-          "Actions: config.get, config.schema, config.apply (validate + write full config, then restart), update.run (update deps or git, then restart).",
+          "Do not run config.apply, config.patch, or update.run unless the user explicitly requests an update or config change; if it's not explicit, ask first.",
+          "Actions: restart, config.get, config.schema, config.apply, config.patch, update.run, mcp.presets.list, mcp.providers.snapshot, mcp.providers.apply, mcp.market.search, mcp.market.detail, mcp.market.install, mcp.market.uninstall, mcp.market.refresh, tools.list, tools.call.",
+          "Use tools.list/tools.call to discover and invoke provider tools (including MCP) instead of guessing tool names.",
           "After restart, OpenClaw pings the last active session automatically.",
         ].join("\n")
       : "",

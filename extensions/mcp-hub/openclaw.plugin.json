@@ -7,6 +7,10 @@
     "type": "object",
     "additionalProperties": false,
     "properties": {
+      "version": {
+        "type": "number",
+        "enum": [2]
+      },
       "providers": {
         "type": "object",
         "additionalProperties": {
@@ -14,6 +18,37 @@
           "additionalProperties": true
         },
         "default": {}
+      },
+      "builtinProviders": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "default": {}
+      },
+      "marketProviders": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "default": {}
+      },
+      "marketConfig": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "registryBaseUrl": {
+            "type": "string"
+          },
+          "apiKeyRef": {
+            "type": "string"
+          },
+          "lastSyncAt": {
+            "type": "string"
+          }
+        }
       }
     }
   }

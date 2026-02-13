@@ -21,6 +21,9 @@ export type McpPreset = {
   label: string;
   description: string;
   iconKey: string;
+  implementationSource: "official" | "trusted-substitute";
+  statusHints?: string[];
+  requiredSecrets?: string[];
   website?: string;
   docsUrl?: string;
   aliases?: string[];
@@ -34,6 +37,9 @@ const MCP_PRESETS: McpPreset[] = [
     label: "GitHub",
     description: "Repository, issue, and pull-request workflows",
     iconKey: "github",
+    implementationSource: "official",
+    statusHints: ["Token required"],
+    requiredSecrets: ["token"],
     website: "https://github.com",
     docsUrl: "https://docs.github.com",
     aliases: ["github", "gh"],
@@ -61,6 +67,9 @@ const MCP_PRESETS: McpPreset[] = [
     label: "Figma",
     description: "Design file and component operations",
     iconKey: "figma",
+    implementationSource: "official",
+    statusHints: ["Token required"],
+    requiredSecrets: ["token"],
     website: "https://www.figma.com",
     docsUrl: "https://www.figma.com/developers",
     aliases: ["figma"],
@@ -87,6 +96,9 @@ const MCP_PRESETS: McpPreset[] = [
     label: "Notion",
     description: "Page and database knowledge operations",
     iconKey: "notion",
+    implementationSource: "official",
+    statusHints: ["Integration token required"],
+    requiredSecrets: ["token"],
     website: "https://www.notion.so",
     docsUrl: "https://developers.notion.com",
     aliases: ["notion"],
@@ -108,58 +120,14 @@ const MCP_PRESETS: McpPreset[] = [
     ],
   },
   {
-    presetId: "slack",
-    providerId: "mcp:slack",
-    label: "Slack",
-    description: "Workspace messaging and channel workflows",
-    iconKey: "slack",
-    website: "https://slack.com",
-    docsUrl: "https://api.slack.com",
-    aliases: ["slack"],
-    fields: [
-      {
-        key: "botToken",
-        label: "Bot Token",
-        type: "password",
-        required: true,
-        secret: true,
-        placeholder: "xoxb-***",
-      },
-      {
-        key: "appToken",
-        label: "App Token",
-        type: "password",
-        secret: true,
-        placeholder: "xapp-***",
-      },
-    ],
-  },
-  {
-    presetId: "linear",
-    providerId: "mcp:linear",
-    label: "Linear",
-    description: "Issue and project planning workflows",
-    iconKey: "linear",
-    website: "https://linear.app",
-    docsUrl: "https://developers.linear.app",
-    aliases: ["linear"],
-    fields: [
-      {
-        key: "token",
-        label: "API Key",
-        type: "password",
-        required: true,
-        secret: true,
-        placeholder: "lin_api_xxx",
-      },
-    ],
-  },
-  {
     presetId: "google-drive",
     providerId: "mcp:google-drive",
     label: "Google Drive",
     description: "Drive file and document operations",
     iconKey: "google-drive",
+    implementationSource: "official",
+    statusHints: ["Credentials required"],
+    requiredSecrets: ["credentialsJson"],
     website: "https://drive.google.com",
     docsUrl: "https://developers.google.com/drive",
     aliases: ["google-drive", "gdrive", "google"],
@@ -180,37 +148,6 @@ const MCP_PRESETS: McpPreset[] = [
       },
     ],
   },
-  {
-    presetId: "postgres",
-    providerId: "mcp:postgres",
-    label: "Postgres",
-    description: "Database query and schema operations",
-    iconKey: "postgres",
-    website: "https://www.postgresql.org",
-    docsUrl: "https://www.postgresql.org/docs/",
-    aliases: ["postgres", "postgresql"],
-    fields: [
-      {
-        key: "connectionString",
-        label: "Connection String",
-        type: "password",
-        required: true,
-        secret: true,
-        placeholder: "postgres://user:pass@host:5432/db",
-      },
-      {
-        key: "sslMode",
-        label: "SSL Mode",
-        type: "select",
-        options: [
-          { value: "disable", label: "Disable" },
-          { value: "prefer", label: "Prefer" },
-          { value: "require", label: "Require" },
-        ],
-        defaultValue: "prefer",
-      },
-    ],
-  },
 ];
 
 export function listMcpPresets(): McpPreset[] {
@@ -220,6 +157,8 @@ export function listMcpPresets(): McpPreset[] {
       ...field,
       ...(Array.isArray(field.options) ? { options: field.options.map((option) => ({ ...option })) } : {}),
     })),
+    ...(Array.isArray(preset.statusHints) ? { statusHints: [...preset.statusHints] } : {}),
+    ...(Array.isArray(preset.requiredSecrets) ? { requiredSecrets: [...preset.requiredSecrets] } : {}),
     ...(Array.isArray(preset.aliases) ? { aliases: [...preset.aliases] } : {}),
   }));
 }

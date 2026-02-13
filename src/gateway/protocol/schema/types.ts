@@ -32,9 +32,21 @@ import type {
   McpProviderStateSchema,
   McpProvidersApplyParamsSchema,
   McpProvidersApplyResultSchema,
+  McpMarketSearchParamsSchema,
+  McpMarketSearchResultSchema,
+  McpMarketDetailParamsSchema,
+  McpMarketDetailResultSchema,
+  McpMarketInstallParamsSchema,
+  McpMarketInstallResultSchema,
+  McpMarketUninstallParamsSchema,
+  McpMarketUninstallResultSchema,
+  McpMarketRefreshParamsSchema,
+  McpMarketRefreshResultSchema,
   McpProvidersSnapshotParamsSchema,
   McpProvidersSnapshotResultSchema,
   ToolDefinitionSchema,
+  ToolsCallParamsSchema,
+  ToolsCallResultSchema,
   ToolsListParamsSchema,
   ToolsListResultSchema,
   ModelsListResultSchema,
@@ -237,6 +249,8 @@ export type ModelsListParams = Static<typeof ModelsListParamsSchema>;
 export type ModelsTestParams = Static<typeof ModelsTestParamsSchema>;
 export type ModelsTestResult = Static<typeof ModelsTestResultSchema>;
 export type ToolDefinition = Static<typeof ToolDefinitionSchema>;
+export type ToolsCallParams = Static<typeof ToolsCallParamsSchema>;
+export type ToolsCallResult = Static<typeof ToolsCallResultSchema>;
 export type ToolsListParams = Static<typeof ToolsListParamsSchema>;
 export type ToolsListResult = Static<typeof ToolsListResultSchema>;
 export type McpPresetsListParams = Static<typeof McpPresetsListParamsSchema>;
@@ -251,6 +265,16 @@ export type McpProvidersSnapshotResult = Static<typeof McpProvidersSnapshotResul
 export type McpProvidersApplyParams = Static<typeof McpProvidersApplyParamsSchema>;
 export type McpFieldError = Static<typeof McpFieldErrorSchema>;
 export type McpProvidersApplyResult = Static<typeof McpProvidersApplyResultSchema>;
+export type McpMarketSearchParams = Static<typeof McpMarketSearchParamsSchema>;
+export type McpMarketSearchResult = Static<typeof McpMarketSearchResultSchema>;
+export type McpMarketDetailParams = Static<typeof McpMarketDetailParamsSchema>;
+export type McpMarketDetailResult = Static<typeof McpMarketDetailResultSchema>;
+export type McpMarketInstallParams = Static<typeof McpMarketInstallParamsSchema>;
+export type McpMarketInstallResult = Static<typeof McpMarketInstallResultSchema>;
+export type McpMarketUninstallParams = Static<typeof McpMarketUninstallParamsSchema>;
+export type McpMarketUninstallResult = Static<typeof McpMarketUninstallResultSchema>;
+export type McpMarketRefreshParams = Static<typeof McpMarketRefreshParamsSchema>;
+export type McpMarketRefreshResult = Static<typeof McpMarketRefreshResultSchema>;
 export type ModelsListResult = Static<typeof ModelsListResultSchema>;
 export type SkillListItem = Static<typeof SkillListItemSchema>;
 export type SkillsStatusParams = Static<typeof SkillsStatusParamsSchema>;

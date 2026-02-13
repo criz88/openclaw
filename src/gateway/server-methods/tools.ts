@@ -1,7 +1,8 @@
 import type { GatewayRequestHandlers } from "./types.js";
 import { loadConfig } from "../../config/config.js";
-import { readMcpHubConfig, normalizeMcpProviderId } from "../../mcp/config.js";
-import { validateToolsListParams, ErrorCodes, errorShape } from "../protocol/index.js";
+import { listAllMcpProviders, readMcpHubConfig, normalizeMcpProviderId } from "../../mcp/config.js";
+import { invokeMcpRuntimeTool, listMcpRuntimeToolDefinitions } from "../../mcp/runtime.js";
+import { validateToolsCallParams, validateToolsListParams, ErrorCodes, errorShape } from "../protocol/index.js";
 
 type ToolProviderKind = "companion" | "mcp" | "builtin";
 
@@ -15,6 +16,8 @@ type ToolDefinition = {
   command: string;
   nodeId: string;
   nodeName: string;
+  source?: "builtin" | "market";
+  implementationSource?: "official" | "trusted-substitute" | "smithery";
 };
 
 type NodeAction = {
@@ -34,6 +37,18 @@ type ConnectedNode = {
 type ToolsContext = {
   nodeRegistry: {
     listConnected: () => ConnectedNode[];
+    invoke: (params: {
+      nodeId: string;
+      command: string;
+      params?: unknown;
+      timeoutMs?: number;
+      idempotencyKey?: string;
+    }) => Promise<{
+      ok: boolean;
+      payload?: unknown;
+      payloadJSON?: string | null;
+      error?: { code?: string; message?: string } | null;
+    }>;
   };
 };
 
@@ -161,8 +176,9 @@ function toInputSchema(params: unknown) {
 
 export function listToolDefinitions(
   context: Parameters<typeof listTools>[0],
+  config = loadConfig(),
 ): ToolDefinition[] {
-  return listTools(context).map((tool) => {
+  const nodeDefinitions = listTools(context).map((tool) => {
     const providerMeta = resolveProviderMeta({
       action: {
         id: tool.id,
@@ -192,12 +208,19 @@ export function listToolDefinitions(
       nodeName: tool.nodeName,
     };
   });
+  const mcpDefinitions = listMcpRuntimeToolDefinitions(config).map((tool) => ({
+    ...tool,
+    nodeId: "",
+    nodeName: "MCP Hub",
+  }));
+  return [...nodeDefinitions, ...mcpDefinitions];
 }
 
 export function filterToolDefinitionsByMcpConfig(
   definitions: ToolDefinition[],
-  providersConfig: ReturnType<typeof readMcpHubConfig>["providers"],
+  hubConfig: ReturnType<typeof readMcpHubConfig>,
 ): ToolDefinition[] {
+  const providersConfig = listAllMcpProviders(hubConfig);
   return definitions.filter((definition) => {
     if (definition.providerKind !== "mcp") {
       return true;
@@ -218,8 +241,147 @@ export const toolsHandlers: GatewayRequestHandlers = {
       return;
     }
     const config = loadConfig();
-    const providersConfig = readMcpHubConfig(config).providers;
-    const definitions = filterToolDefinitionsByMcpConfig(listToolDefinitions(context), providersConfig);
+    const hubConfig = readMcpHubConfig(config);
+    const rawDefinitions = filterToolDefinitionsByMcpConfig(
+      listToolDefinitions(context, config),
+      hubConfig,
+    );
+
+    const p = (params && typeof params === "object" ? params : {}) as {
+      providerId?: string;
+      providerIds?: string[];
+      providerKind?: "companion" | "mcp" | "builtin";
+      includeBuiltin?: boolean;
+    };
+    const providerId = String(p.providerId || "").trim();
+    const providerIds = Array.isArray(p.providerIds)
+      ? p.providerIds.map((id) => String(id || "").trim()).filter(Boolean)
+      : [];
+    const providerSet = new Set<string>([
+      ...(providerId ? [providerId] : []),
+      ...providerIds,
+    ]);
+    const includeBuiltin = p.includeBuiltin !== false;
+    const providerKind = p.providerKind;
+
+    const definitions = rawDefinitions.filter((definition) => {
+      if (!includeBuiltin && definition.providerKind === "builtin") {
+        return false;
+      }
+      if (providerKind && definition.providerKind !== providerKind) {
+        return false;
+      }
+      if (providerSet.size > 0 && !providerSet.has(definition.providerId)) {
+        return false;
+      }
+      return true;
+    });
+
     respond(true, { ok: true, definitions }, undefined);
+  },
+  "tools.call": async ({ params, respond, context }) => {
+    if (!validateToolsCallParams(params)) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "invalid tools.call params"));
+      return;
+    }
+    const p = params as {
+      providerId?: string;
+      toolName?: string;
+      params?: Record<string, unknown>;
+      timeoutMs?: number;
+    };
+    const providerId = String(p.providerId || "").trim();
+    const toolNameRaw = String(p.toolName || "").trim();
+    const timeoutMs = typeof p.timeoutMs === "number" && Number.isFinite(p.timeoutMs)
+      ? Math.max(1000, Math.floor(p.timeoutMs))
+      : undefined;
+    const callParams = p.params && typeof p.params === "object" && !Array.isArray(p.params)
+      ? p.params
+      : {};
+    if (!providerId || !toolNameRaw) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "providerId and toolName are required"));
+      return;
+    }
+
+    const config = loadConfig();
+    const normalizedProviderId = normalizeMcpProviderId(providerId);
+    const toolName =
+      toolNameRaw.startsWith(`${providerId}.`) || toolNameRaw.startsWith(`${normalizedProviderId}.`)
+        ? toolNameRaw.slice(toolNameRaw.indexOf(".") + 1).trim()
+        : toolNameRaw;
+    const definitions = listToolDefinitions(context, config);
+    const matched = definitions.find((definition) => {
+      const fullName = `${definition.providerId}.${definition.command}`;
+      if (definition.providerId !== providerId && definition.providerId !== normalizedProviderId) {
+        return false;
+      }
+      if (definition.command === toolName) return true;
+      if (definition.name === toolNameRaw) return true;
+      if (fullName === toolNameRaw) return true;
+      return false;
+    });
+    if (!matched) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "tool not found in provider"));
+      return;
+    }
+
+    if (matched.providerKind === "mcp") {
+      try {
+        const result = await invokeMcpRuntimeTool({
+          config,
+          providerId: matched.providerId,
+          command: matched.command,
+          args: callParams,
+          timeoutMs,
+        });
+        respond(
+          true,
+          {
+            ok: true,
+            providerId: matched.providerId,
+            toolName: matched.name,
+            command: matched.command,
+            result,
+          },
+          undefined,
+        );
+      } catch (error) {
+        respond(
+          false,
+          undefined,
+          errorShape(
+            ErrorCodes.INVALID_REQUEST,
+            `mcp tool call failed: ${String((error as Error)?.message || error || "unknown")}`,
+          ),
+        );
+      }
+      return;
+    }
+
+    if (!matched.nodeId) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "node-backed tool is missing node mapping"),
+      );
+      return;
+    }
+    const invokeResult = await context.nodeRegistry.invoke({
+      nodeId: matched.nodeId,
+      command: matched.command,
+      params: callParams,
+      ...(timeoutMs ? { timeoutMs } : {}),
+    });
+    respond(
+      true,
+      {
+        ok: invokeResult.ok,
+        providerId: matched.providerId,
+        toolName: matched.name,
+        command: matched.command,
+        result: invokeResult,
+      },
+      undefined,
+    );
   },
 };

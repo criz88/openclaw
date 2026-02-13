@@ -34,6 +34,16 @@ const GATEWAY_ACTIONS = [
   "config.apply",
   "config.patch",
   "update.run",
+  "mcp.presets.list",
+  "mcp.providers.snapshot",
+  "mcp.providers.apply",
+  "mcp.market.search",
+  "mcp.market.detail",
+  "mcp.market.install",
+  "mcp.market.uninstall",
+  "mcp.market.refresh",
+  "tools.list",
+  "tools.call",
 ] as const;
 
 // NOTE: Using a flattened object schema instead of Type.Union([Type.Object(...), ...])
@@ -51,10 +61,34 @@ const GatewayToolSchema = Type.Object({
   // config.apply, config.patch
   raw: Type.Optional(Type.String()),
   baseHash: Type.Optional(Type.String()),
+  // mcp.providers.apply
+  providers: Type.Optional(Type.Array(Type.Unknown())),
+  mcpProviders: Type.Optional(Type.Array(Type.Unknown())),
+  // mcp.market.search
+  query: Type.Optional(Type.String()),
+  page: Type.Optional(Type.Number()),
+  pageSize: Type.Optional(Type.Number()),
+  registryBaseUrl: Type.Optional(Type.String()),
+  // mcp.market.detail, mcp.market.install
+  qualifiedName: Type.Optional(Type.String()),
+  // mcp.market.install
+  providerLabel: Type.Optional(Type.String()),
+  enabled: Type.Optional(Type.Boolean()),
+  mcpFields: Type.Optional(Type.Unknown()),
+  mcpSecretValues: Type.Optional(Type.Unknown()),
+  smitheryApiKey: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   // config.apply, config.patch, update.run
   sessionKey: Type.Optional(Type.String()),
   note: Type.Optional(Type.String()),
   restartDelayMs: Type.Optional(Type.Number()),
+  // tools.list
+  providerKind: Type.Optional(Type.String()),
+  providerId: Type.Optional(Type.String()),
+  providerIds: Type.Optional(Type.Array(Type.String())),
+  includeBuiltin: Type.Optional(Type.Boolean()),
+  // tools.call
+  toolName: Type.Optional(Type.String()),
+  toolArgs: Type.Optional(Type.Unknown()),
 });
 // NOTE: We intentionally avoid top-level `allOf`/`anyOf`/`oneOf` conditionals here:
 // - OpenAI rejects tool schemas that include these keywords at the *top-level*.
@@ -246,6 +280,173 @@ export function createGatewayTool(opts?: {
           timeoutMs: timeoutMs ?? DEFAULT_UPDATE_TIMEOUT_MS,
         });
         return jsonResult({ ok: true, result });
+      }
+      if (action === "mcp.presets.list") {
+        const result = await callGatewayTool("mcp.presets.list", gatewayOpts, {});
+        return jsonResult({ ok: true, result });
+      }
+      if (action === "mcp.providers.snapshot") {
+        const result = await callGatewayTool("mcp.providers.snapshot", gatewayOpts, {});
+        return jsonResult({ ok: true, result });
+      }
+      if (action === "mcp.providers.apply") {
+        const providers = Array.isArray(params.providers)
+          ? params.providers
+          : Array.isArray(params.mcpProviders)
+            ? params.mcpProviders
+            : [];
+        const baseHash = readStringParam(params, "baseHash");
+        const result = await callGatewayTool("mcp.providers.apply", gatewayOpts, {
+          providers,
+          ...(baseHash ? { baseHash } : {}),
+        });
+        return jsonResult({ ok: true, result });
+      }
+      if (action === "mcp.market.search") {
+        const query = readStringParam(params, "query");
+        const page =
+          typeof params.page === "number" && Number.isFinite(params.page)
+            ? Math.max(1, Math.floor(params.page))
+            : undefined;
+        const pageSize =
+          typeof params.pageSize === "number" && Number.isFinite(params.pageSize)
+            ? Math.max(1, Math.floor(params.pageSize))
+            : undefined;
+        const registryBaseUrl = readStringParam(params, "registryBaseUrl");
+        const result = await callGatewayTool("mcp.market.search", gatewayOpts, {
+          ...(query ? { query } : {}),
+          ...(page ? { page } : {}),
+          ...(pageSize ? { pageSize } : {}),
+          ...(registryBaseUrl ? { registryBaseUrl } : {}),
+        });
+        return jsonResult({ ok: true, result });
+      }
+      if (action === "mcp.market.detail") {
+        const qualifiedName = readStringParam(params, "qualifiedName", { required: true });
+        const registryBaseUrl = readStringParam(params, "registryBaseUrl");
+        const result = await callGatewayTool("mcp.market.detail", gatewayOpts, {
+          qualifiedName,
+          ...(registryBaseUrl ? { registryBaseUrl } : {}),
+        });
+        return jsonResult({ ok: true, result });
+      }
+      if (action === "mcp.market.install") {
+        const qualifiedName = readStringParam(params, "qualifiedName", { required: true });
+        const providerId = readStringParam(params, "providerId");
+        const providerLabel = readStringParam(params, "providerLabel");
+        const baseHash = readStringParam(params, "baseHash");
+        const enabled =
+          typeof params.enabled === "boolean" ? params.enabled : undefined;
+        const registryBaseUrl = readStringParam(params, "registryBaseUrl");
+        const mcpFields =
+          params.mcpFields && typeof params.mcpFields === "object" && !Array.isArray(params.mcpFields)
+            ? params.mcpFields
+            : undefined;
+        const mcpSecretValues =
+          params.mcpSecretValues &&
+          typeof params.mcpSecretValues === "object" &&
+          !Array.isArray(params.mcpSecretValues)
+            ? params.mcpSecretValues
+            : undefined;
+        const smitheryApiKey =
+          typeof params.smitheryApiKey === "string" || params.smitheryApiKey === null
+            ? params.smitheryApiKey
+            : undefined;
+        const result = await callGatewayTool("mcp.market.install", gatewayOpts, {
+          qualifiedName,
+          ...(providerId ? { providerId } : {}),
+          ...(providerLabel ? { label: providerLabel } : {}),
+          ...(baseHash ? { baseHash } : {}),
+          ...(enabled !== undefined ? { enabled } : {}),
+          ...(mcpFields ? { fields: mcpFields } : {}),
+          ...(mcpSecretValues ? { secretValues: mcpSecretValues } : {}),
+          ...(registryBaseUrl ? { registryBaseUrl } : {}),
+          ...(smitheryApiKey !== undefined ? { smitheryApiKey } : {}),
+        });
+        return jsonResult({ ok: true, result });
+      }
+      if (action === "mcp.market.uninstall") {
+        const providerId = readStringParam(params, "providerId", { required: true });
+        const baseHash = readStringParam(params, "baseHash");
+        const result = await callGatewayTool("mcp.market.uninstall", gatewayOpts, {
+          providerId,
+          ...(baseHash ? { baseHash } : {}),
+        });
+        return jsonResult({ ok: true, result });
+      }
+      if (action === "mcp.market.refresh") {
+        const baseHash = readStringParam(params, "baseHash");
+        const registryBaseUrl = readStringParam(params, "registryBaseUrl");
+        const smitheryApiKey =
+          typeof params.smitheryApiKey === "string" || params.smitheryApiKey === null
+            ? params.smitheryApiKey
+            : undefined;
+        const result = await callGatewayTool("mcp.market.refresh", gatewayOpts, {
+          ...(baseHash ? { baseHash } : {}),
+          ...(registryBaseUrl ? { registryBaseUrl } : {}),
+          ...(smitheryApiKey !== undefined ? { smitheryApiKey } : {}),
+        });
+        return jsonResult({ ok: true, result });
+      }
+      if (action === "tools.list") {
+        const providerKindRaw = readStringParam(params, "providerKind");
+        const providerKind =
+          providerKindRaw && ["mcp", "companion", "builtin"].includes(providerKindRaw.trim())
+            ? providerKindRaw.trim()
+            : undefined;
+        const providerId = readStringParam(params, "providerId");
+        const providerIds =
+          Array.isArray(params.providerIds) && params.providerIds.length > 0
+            ? params.providerIds
+                .filter((value) => typeof value === "string")
+                .map((value) => value.trim())
+                .filter(Boolean)
+            : undefined;
+        const includeBuiltin =
+          typeof params.includeBuiltin === "boolean" ? params.includeBuiltin : undefined;
+        const listResult = await callGatewayTool<{
+          ok?: boolean;
+          definitions?: Array<Record<string, unknown>>;
+        }>("tools.list", gatewayOpts, {
+          ...(providerId ? { providerId } : {}),
+          ...(providerIds && providerIds.length > 0 ? { providerIds } : {}),
+          ...(providerKind ? { providerKind } : {}),
+          ...(includeBuiltin !== undefined ? { includeBuiltin } : {}),
+        });
+        const definitions = Array.isArray(listResult?.definitions) ? listResult.definitions : [];
+        const filtered =
+          providerKind === undefined
+            ? definitions
+            : definitions.filter((definition) => {
+                const rawKind = String(definition?.providerKind || "").trim();
+                return rawKind === providerKind;
+              });
+        return jsonResult({
+          ok: true,
+          count: filtered.length,
+          definitions: filtered,
+        });
+      }
+      if (action === "tools.call") {
+        const providerId = readStringParam(params, "providerId", { required: true });
+        const toolName = readStringParam(params, "toolName", { required: true });
+        const toolArgs =
+          params.toolArgs && typeof params.toolArgs === "object" && !Array.isArray(params.toolArgs)
+            ? params.toolArgs
+            : {};
+        const invokeResult = await callGatewayTool("tools.call", gatewayOpts, {
+          providerId,
+          toolName,
+          params: toolArgs,
+          ...(timeoutMs ? { timeoutMs } : {}),
+        });
+
+        return jsonResult({
+          ok: true,
+          providerId,
+          toolName,
+          result: invokeResult,
+        });
       }
 
       throw new Error(`Unknown action: ${action}`);

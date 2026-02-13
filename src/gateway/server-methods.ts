@@ -83,6 +83,8 @@ const READ_METHODS = new Set([
   "tools.list",
   "mcp.presets.list",
   "mcp.providers.snapshot",
+  "mcp.market.search",
+  "mcp.market.detail",
   "oauth.qwen.start",
   "oauth.qwen.poll",
   "oauth.minimax.start",
@@ -127,6 +129,10 @@ const WRITE_METHODS = new Set([
   "chat.abort",
   "browser.request",
   "mcp.providers.apply",
+  "mcp.market.install",
+  "mcp.market.uninstall",
+  "mcp.market.refresh",
+  "tools.call",
   "pairing.approve",
 ]);
 
