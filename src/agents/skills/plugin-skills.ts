@@ -36,7 +36,12 @@ export function resolvePluginSkillDirs(params: {
     if (!record.skills || record.skills.length === 0) {
       continue;
     }
-    const enableState = resolveEnableState(record.id, record.origin, normalizedPlugins);
+    const enableState = resolveEnableState(
+      record.id,
+      record.origin,
+      normalizedPlugins,
+      record.kind,
+    );
     if (!enableState.enabled) {
       continue;
     }

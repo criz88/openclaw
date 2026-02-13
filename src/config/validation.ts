@@ -301,7 +301,12 @@ export function validateConfigObjectWithPlugins(raw: unknown):
     const entry = normalizedPlugins.entries[pluginId];
     const entryHasConfig = Boolean(entry?.config);
 
-    const enableState = resolveEnableState(pluginId, record.origin, normalizedPlugins);
+    const enableState = resolveEnableState(
+      pluginId,
+      record.origin,
+      normalizedPlugins,
+      record.kind,
+    );
     let enabled = enableState.enabled;
     let reason = enableState.reason;
 

@@ -252,7 +252,7 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
       continue;
     }
 
-    const enableState = resolveEnableState(pluginId, candidate.origin, normalized);
+    const enableState = resolveEnableState(pluginId, candidate.origin, normalized, manifestRecord.kind);
     const entry = normalized.entries[pluginId];
     const record = createPluginRecord({
       id: pluginId,
