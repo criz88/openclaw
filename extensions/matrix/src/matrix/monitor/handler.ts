@@ -271,7 +271,8 @@ export function createMatrixRoomMessageHandler(params: MatrixMonitorHandlerParam
                       `Pairing code: ${code}`,
                       "",
                       "Ask the bot owner to approve in OpenClaw App:",
-                      "Open OpenClaw Desktop -> Channels -> Pending List -> enter this Pairing code.",
+                      "A Pairing Request popup appears automatically on top of any page.",
+                      "If it was ignored: Open OpenClaw Desktop -> Channels -> Pending List -> enter this Pairing code.",
                     ].join("\n"),
                     { client },
                   );

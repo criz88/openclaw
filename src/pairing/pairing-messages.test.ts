@@ -36,8 +36,9 @@ describe("buildPairingReply", () => {
       expect(text).toContain(testCase.idLine);
       expect(text).toContain(`Pairing code: ${testCase.code}`);
       expect(text).toContain("Ask the bot owner to approve in OpenClaw App:");
+      expect(text).toContain("A Pairing Request popup appears automatically on top of any page.");
       expect(text).toContain(
-        "Open OpenClaw Desktop -> Channels -> Pending List -> enter this Pairing code.",
+        "If it was ignored: Open OpenClaw Desktop -> Channels -> Pending List -> enter this Pairing code.",
       );
     });
   }
