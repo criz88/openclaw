@@ -135,6 +135,22 @@ import {
   LogsTailResultSchema,
   type ModelsListParams,
   ModelsListParamsSchema,
+  type McpFieldError,
+  type McpPreset,
+  type McpPresetField,
+  type McpPresetFieldOption,
+  type McpPresetsListParams,
+  McpPresetsListParamsSchema,
+  type McpPresetsListResult,
+  type McpProviderFieldValue,
+  type McpProviderState,
+  type McpProvidersApplyParams,
+  McpProvidersApplyParamsSchema,
+  type McpProvidersApplyResult,
+  type McpProvidersSnapshotParams,
+  McpProvidersSnapshotParamsSchema,
+  type McpProvidersSnapshotResult,
+  type ToolDefinition,
   type ModelsTestParams,
   ModelsTestParamsSchema,
   type ModelsTestResult,
@@ -356,6 +372,15 @@ export const validateOverviewSummaryParams = ajv.compile<OverviewSummaryParams>(
 export const validateModelsListParams = ajv.compile<ModelsListParams>(ModelsListParamsSchema);
 export const validateModelsTestParams = ajv.compile<ModelsTestParams>(ModelsTestParamsSchema);
 export const validateToolsListParams = ajv.compile<ToolsListParams>(ToolsListParamsSchema);
+export const validateMcpPresetsListParams = ajv.compile<McpPresetsListParams>(
+  McpPresetsListParamsSchema,
+);
+export const validateMcpProvidersSnapshotParams = ajv.compile<McpProvidersSnapshotParams>(
+  McpProvidersSnapshotParamsSchema,
+);
+export const validateMcpProvidersApplyParams = ajv.compile<McpProvidersApplyParams>(
+  McpProvidersApplyParamsSchema,
+);
 export const validateSkillsStatusParams = ajv.compile<SkillsStatusParams>(SkillsStatusParamsSchema);
 export const validateSkillsListParams = ajv.compile<SkillsListParams>(SkillsListParamsSchema);
 export const validateSkillsBinsParams = ajv.compile<SkillsBinsParams>(SkillsBinsParamsSchema);
@@ -529,6 +554,9 @@ export {
   ModelsTestResultSchema,
   ToolsListParamsSchema,
   ToolsListResultSchema,
+  McpPresetsListParamsSchema,
+  McpProvidersSnapshotParamsSchema,
+  McpProvidersApplyParamsSchema,
   SkillsStatusParamsSchema,
   SkillsListParamsSchema,
   SkillsListResultSchema,
@@ -628,8 +656,21 @@ export type {
   ModelsListParams,
   ModelsTestParams,
   ModelsTestResult,
+  ToolDefinition,
   ToolsListParams,
   ToolsListResult,
+  McpPresetsListParams,
+  McpPresetFieldOption,
+  McpPresetField,
+  McpPreset,
+  McpPresetsListResult,
+  McpProviderFieldValue,
+  McpProviderState,
+  McpProvidersSnapshotParams,
+  McpProvidersSnapshotResult,
+  McpProvidersApplyParams,
+  McpFieldError,
+  McpProvidersApplyResult,
   SkillsStatusParams,
   SkillsListParams,
   SkillsListResult,

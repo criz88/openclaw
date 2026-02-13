@@ -147,19 +147,26 @@ export const ModelsTestResultSchema = Type.Object(
 
 export const ToolsListParamsSchema = Type.Object({}, { additionalProperties: false });
 
+export const ToolDefinitionSchema = Type.Object(
+  {
+    name: NonEmptyString,
+    providerId: NonEmptyString,
+    providerKind: Type.Optional(
+      Type.Union([Type.Literal("companion"), Type.Literal("mcp"), Type.Literal("builtin")]),
+    ),
+    providerLabel: Type.Optional(Type.String()),
+    description: Type.Optional(Type.String()),
+    inputSchema: Type.Optional(Type.Unknown()),
+    command: NonEmptyString,
+    nodeId: Type.Optional(Type.String()),
+    nodeName: Type.Optional(Type.String()),
+  },
+  { additionalProperties: false },
+);
+
 export const ToolsListResultSchema = Type.Object({
   ok: Type.Boolean(),
-  tools: Type.Array(
-    Type.Object({
-      id: Type.String(),
-      label: Type.Optional(Type.String()),
-      description: Type.Optional(Type.String()),
-      command: Type.String(),
-      params: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
-      nodeId: Type.Optional(Type.String()),
-      nodeName: Type.Optional(Type.String()),
-    }),
-  ),
+  definitions: Type.Array(ToolDefinitionSchema),
 });
 
 export const ModelsListResultSchema = Type.Object(
@@ -234,6 +241,145 @@ export const SkillsUpdateParamsSchema = Type.Object(
     enabled: Type.Optional(Type.Boolean()),
     apiKey: Type.Optional(Type.String()),
     env: Type.Optional(Type.Record(NonEmptyString, Type.String())),
+  },
+  { additionalProperties: false },
+);
+
+export const McpPresetsListParamsSchema = Type.Object({}, { additionalProperties: false });
+
+export const McpPresetFieldOptionSchema = Type.Object(
+  {
+    value: NonEmptyString,
+    label: NonEmptyString,
+  },
+  { additionalProperties: false },
+);
+
+export const McpPresetFieldSchema = Type.Object(
+  {
+    key: NonEmptyString,
+    label: NonEmptyString,
+    description: Type.Optional(Type.String()),
+    type: Type.Union([
+      Type.Literal("text"),
+      Type.Literal("password"),
+      Type.Literal("url"),
+      Type.Literal("number"),
+      Type.Literal("boolean"),
+      Type.Literal("select"),
+    ]),
+    required: Type.Optional(Type.Boolean()),
+    secret: Type.Optional(Type.Boolean()),
+    placeholder: Type.Optional(Type.String()),
+    options: Type.Optional(Type.Array(McpPresetFieldOptionSchema)),
+    defaultValue: Type.Optional(Type.Union([Type.String(), Type.Number(), Type.Boolean()])),
+  },
+  { additionalProperties: false },
+);
+
+export const McpPresetSchema = Type.Object(
+  {
+    presetId: NonEmptyString,
+    providerId: NonEmptyString,
+    label: NonEmptyString,
+    description: NonEmptyString,
+    iconKey: Type.Optional(Type.String()),
+    website: Type.Optional(Type.String()),
+    docsUrl: Type.Optional(Type.String()),
+    aliases: Type.Optional(Type.Array(Type.String())),
+    fields: Type.Array(McpPresetFieldSchema),
+  },
+  { additionalProperties: false },
+);
+
+export const McpPresetsListResultSchema = Type.Object(
+  {
+    ok: Type.Boolean(),
+    presets: Type.Array(McpPresetSchema),
+  },
+  { additionalProperties: false },
+);
+
+export const McpProvidersSnapshotParamsSchema = Type.Object({}, { additionalProperties: false });
+
+export const McpProviderFieldValueSchema = Type.Union([
+  Type.String(),
+  Type.Number(),
+  Type.Boolean(),
+  Type.Null(),
+]);
+
+export const McpProviderStateSchema = Type.Object(
+  {
+    providerId: NonEmptyString,
+    presetId: NonEmptyString,
+    label: NonEmptyString,
+    configured: Type.Boolean(),
+    enabled: Type.Boolean(),
+    available: Type.Boolean(),
+    toolCount: Type.Integer({ minimum: 0 }),
+    iconKey: Type.Optional(Type.String()),
+    description: Type.Optional(Type.String()),
+    fields: Type.Optional(Type.Record(Type.String(), McpProviderFieldValueSchema)),
+    region: Type.Optional(Type.String()),
+    workspace: Type.Optional(Type.String()),
+    scopes: Type.Optional(Type.Array(Type.String())),
+    secretState: Type.Optional(Type.Record(Type.String(), Type.Boolean())),
+    updatedAt: Type.Optional(Type.String()),
+  },
+  { additionalProperties: false },
+);
+
+export const McpProvidersSnapshotResultSchema = Type.Object(
+  {
+    ok: Type.Boolean(),
+    hash: Type.Optional(Type.String()),
+    providers: Type.Array(McpProviderStateSchema),
+  },
+  { additionalProperties: false },
+);
+
+export const McpProvidersApplyParamsSchema = Type.Object(
+  {
+    baseHash: Type.Optional(Type.String()),
+    providers: Type.Array(
+      Type.Object(
+        {
+          providerId: NonEmptyString,
+          presetId: Type.Optional(Type.String()),
+          configured: Type.Optional(Type.Boolean()),
+          enabled: Type.Optional(Type.Boolean()),
+          label: Type.Optional(Type.String()),
+          fields: Type.Optional(Type.Record(Type.String(), McpProviderFieldValueSchema)),
+          region: Type.Optional(Type.String()),
+          workspace: Type.Optional(Type.String()),
+          scopes: Type.Optional(Type.Array(Type.String())),
+          secretValues: Type.Optional(Type.Record(Type.String(), Type.Union([Type.String(), Type.Null()]))),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+  },
+  { additionalProperties: false },
+);
+
+export const McpFieldErrorSchema = Type.Object(
+  {
+    providerId: Type.String(),
+    field: Type.String(),
+    message: Type.String(),
+  },
+  { additionalProperties: false },
+);
+
+export const McpProvidersApplyResultSchema = Type.Object(
+  {
+    ok: Type.Boolean(),
+    restartRequired: Type.Boolean(),
+    restart: Type.Optional(Type.Unknown()),
+    hash: Type.Optional(Type.String()),
+    providers: Type.Array(McpProviderStateSchema),
+    fieldErrors: Type.Optional(Type.Array(McpFieldErrorSchema)),
   },
   { additionalProperties: false },
 );

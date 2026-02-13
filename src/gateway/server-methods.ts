@@ -12,6 +12,7 @@ import { deviceHandlers } from "./server-methods/devices.js";
 import { execApprovalsHandlers } from "./server-methods/exec-approvals.js";
 import { healthHandlers } from "./server-methods/health.js";
 import { logsHandlers } from "./server-methods/logs.js";
+import { mcpHandlers } from "./server-methods/mcp.js";
 import { modelsHandlers } from "./server-methods/models.js";
 import { nodeHandlers } from "./server-methods/nodes.js";
 import { sendHandlers } from "./server-methods/send.js";
@@ -80,6 +81,8 @@ const READ_METHODS = new Set([
   "models.list",
   "models.test",
   "tools.list",
+  "mcp.presets.list",
+  "mcp.providers.snapshot",
   "oauth.qwen.start",
   "oauth.qwen.poll",
   "oauth.minimax.start",
@@ -123,6 +126,7 @@ const WRITE_METHODS = new Set([
   "chat.send",
   "chat.abort",
   "browser.request",
+  "mcp.providers.apply",
   "pairing.approve",
 ]);
 
@@ -216,6 +220,7 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
   ...sessionsHandlers,
   ...systemHandlers,
   ...toolsHandlers,
+  ...mcpHandlers,
   ...oauthHandlers,
   ...updateHandlers,
   ...nodeHandlers,

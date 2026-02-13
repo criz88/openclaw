@@ -33,7 +33,7 @@ export type PluginConfigUiHint = {
   placeholder?: string;
 };
 
-export type PluginKind = "memory";
+export type PluginKind = "memory" | "channel" | "mcp";
 
 export type PluginConfigValidation =
   | { ok: true; value?: unknown }

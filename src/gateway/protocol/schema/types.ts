@@ -22,6 +22,19 @@ import type {
   ModelsListParamsSchema,
   ModelsTestParamsSchema,
   ModelsTestResultSchema,
+  McpFieldErrorSchema,
+  McpPresetFieldOptionSchema,
+  McpPresetFieldSchema,
+  McpPresetSchema,
+  McpPresetsListParamsSchema,
+  McpPresetsListResultSchema,
+  McpProviderFieldValueSchema,
+  McpProviderStateSchema,
+  McpProvidersApplyParamsSchema,
+  McpProvidersApplyResultSchema,
+  McpProvidersSnapshotParamsSchema,
+  McpProvidersSnapshotResultSchema,
+  ToolDefinitionSchema,
   ToolsListParamsSchema,
   ToolsListResultSchema,
   ModelsListResultSchema,
@@ -223,8 +236,21 @@ export type ModelChoice = Static<typeof ModelChoiceSchema>;
 export type ModelsListParams = Static<typeof ModelsListParamsSchema>;
 export type ModelsTestParams = Static<typeof ModelsTestParamsSchema>;
 export type ModelsTestResult = Static<typeof ModelsTestResultSchema>;
+export type ToolDefinition = Static<typeof ToolDefinitionSchema>;
 export type ToolsListParams = Static<typeof ToolsListParamsSchema>;
 export type ToolsListResult = Static<typeof ToolsListResultSchema>;
+export type McpPresetsListParams = Static<typeof McpPresetsListParamsSchema>;
+export type McpPresetFieldOption = Static<typeof McpPresetFieldOptionSchema>;
+export type McpPresetField = Static<typeof McpPresetFieldSchema>;
+export type McpPreset = Static<typeof McpPresetSchema>;
+export type McpPresetsListResult = Static<typeof McpPresetsListResultSchema>;
+export type McpProviderFieldValue = Static<typeof McpProviderFieldValueSchema>;
+export type McpProviderState = Static<typeof McpProviderStateSchema>;
+export type McpProvidersSnapshotParams = Static<typeof McpProvidersSnapshotParamsSchema>;
+export type McpProvidersSnapshotResult = Static<typeof McpProvidersSnapshotResultSchema>;
+export type McpProvidersApplyParams = Static<typeof McpProvidersApplyParamsSchema>;
+export type McpFieldError = Static<typeof McpFieldErrorSchema>;
+export type McpProvidersApplyResult = Static<typeof McpProvidersApplyResultSchema>;
 export type ModelsListResult = Static<typeof ModelsListResultSchema>;
 export type SkillListItem = Static<typeof SkillListItemSchema>;
 export type SkillsStatusParams = Static<typeof SkillsStatusParamsSchema>;

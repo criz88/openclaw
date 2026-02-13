@@ -1,7 +1,102 @@
 import type { GatewayRequestHandlers } from "./types.js";
+import { loadConfig } from "../../config/config.js";
+import { readMcpHubConfig, normalizeMcpProviderId } from "../../mcp/config.js";
 import { validateToolsListParams, ErrorCodes, errorShape } from "../protocol/index.js";
 
-export const listTools = (context: { nodeRegistry: { listConnected: () => Array<{ nodeId: string; displayName?: string; actions?: Array<{ id: string; label?: string; description?: string; command: string; params?: unknown }> }> } }) => {
+type ToolProviderKind = "companion" | "mcp" | "builtin";
+
+type ToolDefinition = {
+  name: string;
+  providerId: string;
+  providerKind: ToolProviderKind;
+  providerLabel: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  command: string;
+  nodeId: string;
+  nodeName: string;
+};
+
+type NodeAction = {
+  id: string;
+  label?: string;
+  description?: string;
+  command: string;
+  params?: unknown;
+};
+
+type ConnectedNode = {
+  nodeId: string;
+  displayName?: string;
+  actions?: NodeAction[];
+};
+
+type ToolsContext = {
+  nodeRegistry: {
+    listConnected: () => ConnectedNode[];
+  };
+};
+
+const resolveProviderMeta = (params: {
+  action: NodeAction;
+  node: ConnectedNode;
+}): { providerId: string; providerKind: ToolProviderKind; providerLabel: string } => {
+  const actionParams =
+    params.action.params && typeof params.action.params === "object" && !Array.isArray(params.action.params)
+      ? (params.action.params as Record<string, unknown>)
+      : {};
+
+  const providerIdFromParams = String(
+    actionParams.providerId ??
+      actionParams.provider_id ??
+      actionParams.mcpProviderId ??
+      actionParams.mcp_provider_id ??
+      "",
+  ).trim();
+  const providerLabelFromParams = String(
+    actionParams.providerLabel ?? actionParams.provider_label ?? "",
+  ).trim();
+  const providerKindFromParams = String(
+    actionParams.providerKind ?? actionParams.provider_kind ?? "",
+  ).trim().toLowerCase();
+
+  let providerId = providerIdFromParams;
+  if (!providerId) {
+    const command = String(params.action.command || "").trim();
+    const actionId = String(params.action.id || "").trim();
+    const candidate = command || actionId;
+    if (candidate.toLowerCase().startsWith("mcp:")) {
+      const idx = candidate.indexOf(".");
+      providerId = idx > 0 ? candidate.slice(0, idx) : candidate;
+    }
+  }
+  if (!providerId) {
+    providerId = `companion:${params.node.nodeId}`;
+  }
+
+  let providerKind: ToolProviderKind;
+  if (providerKindFromParams === "mcp" || providerKindFromParams === "builtin") {
+    providerKind = providerKindFromParams;
+  } else if (providerId.startsWith("mcp:")) {
+    providerKind = "mcp";
+  } else if (providerId.startsWith("builtin:")) {
+    providerKind = "builtin";
+  } else {
+    providerKind = "companion";
+  }
+
+  const providerLabel =
+    providerLabelFromParams ||
+    (providerKind === "companion" ? params.node.displayName || params.node.nodeId : providerId);
+
+  return {
+    providerId: providerKind === "mcp" ? normalizeMcpProviderId(providerId) : providerId,
+    providerKind,
+    providerLabel,
+  };
+};
+
+export const listTools = (context: ToolsContext) => {
   return context.nodeRegistry
     .listConnected()
     .flatMap((node) =>
@@ -66,23 +161,30 @@ function toInputSchema(params: unknown) {
 
 export function listToolDefinitions(
   context: Parameters<typeof listTools>[0],
-): Array<{
-  name: string;
-  providerId: string;
-  description: string;
-  inputSchema: Record<string, unknown>;
-  command: string;
-  nodeId: string;
-  nodeName: string;
-}> {
+): ToolDefinition[] {
   return listTools(context).map((tool) => {
-    const providerId = `companion:${tool.nodeId}`;
+    const providerMeta = resolveProviderMeta({
+      action: {
+        id: tool.id,
+        label: tool.label,
+        description: tool.description,
+        command: tool.command,
+        params: tool.params,
+      },
+      node: {
+        nodeId: tool.nodeId,
+        displayName: tool.nodeName,
+      },
+    });
+    const providerId = providerMeta.providerId;
     const name = `${providerId}.${tool.command}`;
     const description =
       tool.description?.trim() || COMMAND_HINTS[tool.command] || `Invoke companion command: ${tool.command}`;
     return {
       name,
       providerId,
+      providerKind: providerMeta.providerKind,
+      providerLabel: providerMeta.providerLabel,
       description,
       inputSchema: toInputSchema(tool.params),
       command: tool.command,
@@ -92,13 +194,32 @@ export function listToolDefinitions(
   });
 }
 
+export function filterToolDefinitionsByMcpConfig(
+  definitions: ToolDefinition[],
+  providersConfig: ReturnType<typeof readMcpHubConfig>["providers"],
+): ToolDefinition[] {
+  return definitions.filter((definition) => {
+    if (definition.providerKind !== "mcp") {
+      return true;
+    }
+    const providerId = normalizeMcpProviderId(definition.providerId);
+    const config = providersConfig[providerId];
+    if (!config) {
+      return false;
+    }
+    return config.enabled === true;
+  });
+}
+
 export const toolsHandlers: GatewayRequestHandlers = {
   "tools.list": ({ params, respond, context }) => {
     if (!validateToolsListParams(params)) {
       respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "invalid tools.list params"));
       return;
     }
-    const definitions = listToolDefinitions(context);
+    const config = loadConfig();
+    const providersConfig = readMcpHubConfig(config).providers;
+    const definitions = filterToolDefinitionsByMcpConfig(listToolDefinitions(context), providersConfig);
     respond(true, { ok: true, definitions }, undefined);
   },
 };

@@ -9,7 +9,7 @@ type SlotPluginRecord = {
   kind?: PluginKind;
 };
 
-const SLOT_BY_KIND: Record<PluginKind, PluginSlotKey> = {
+const SLOT_BY_KIND: Partial<Record<PluginKind, PluginSlotKey>> = {
   memory: "memory",
 };
 
