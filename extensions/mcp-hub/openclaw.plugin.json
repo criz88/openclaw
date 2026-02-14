@@ -8,10 +8,28 @@
     "additionalProperties": false,
     "properties": {
       "version": {
-        "type": "number",
-        "enum": [3]
+        "oneOf": [
+          { "type": "number", "enum": [1, 2, 3] },
+          { "type": "string", "enum": ["1", "2", "3"] }
+        ]
       },
       "providers": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "default": {}
+      },
+      "builtinProviders": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "default": {}
+      },
+      "marketProviders": {
         "type": "object",
         "additionalProperties": {
           "type": "object",

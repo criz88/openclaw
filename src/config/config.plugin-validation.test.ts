@@ -170,6 +170,29 @@ describe("config plugin validation", () => {
     });
   });
 
+  it("accepts legacy mcp-hub config shapes (v1/v2) so the gateway can start", async () => {
+    await withTempHome(async (home) => {
+      process.env.OPENCLAW_STATE_DIR = path.join(home, ".openclaw");
+      vi.resetModules();
+      const { validateConfigObjectWithPlugins } = await import("./config.js");
+      const res = validateConfigObjectWithPlugins({
+        agents: { list: [{ id: "pi" }] },
+        plugins: {
+          entries: {
+            "mcp-hub": {
+              config: {
+                version: 2,
+                builtinProviders: { "mcp:example": { enabled: true, source: "builtin" } },
+                marketProviders: { "mcp:market": { enabled: true, source: "market" } },
+              },
+            },
+          },
+        },
+      });
+      expect(res.ok).toBe(true);
+    });
+  });
+
   it("rejects unknown heartbeat targets", async () => {
     await withTempHome(async (home) => {
       process.env.OPENCLAW_STATE_DIR = path.join(home, ".openclaw");
