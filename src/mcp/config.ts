@@ -1,9 +1,9 @@
 import type { OpenClawConfig } from "../config/config.js";
-import { listMcpPresetProviderIds } from "./presets.js";
 
 export type McpProviderFieldValue = string | number | boolean | null;
-export type McpProviderSource = "builtin" | "market";
-export type McpImplementationSource = "official" | "trusted-substitute" | "smithery";
+// Legacy values ("builtin", "market") are accepted when parsing existing configs.
+export type McpProviderSource = "manual" | "catalog" | "legacy";
+export type McpImplementationSource = "official" | "trusted-substitute";
 
 export type McpRuntimeToolRow = {
   name: string;
@@ -12,7 +12,7 @@ export type McpRuntimeToolRow = {
   command?: string;
 };
 
-export type McpMarketConnection = {
+export type McpProviderConnection = {
   type: "http";
   deploymentUrl: string;
   authType?: "none" | "bearer";
@@ -20,8 +20,8 @@ export type McpMarketConnection = {
 };
 
 export type McpProviderConfigEntry = {
-  source: McpProviderSource;
-  presetId?: string;
+  // All providers are external MCP servers. These fields are optional and may be used by catalog tooling.
+  source?: McpProviderSource;
   qualifiedName?: string;
   implementationSource?: McpImplementationSource;
   enabled: boolean;
@@ -39,32 +39,20 @@ export type McpProviderConfigEntry = {
   requiredSecrets?: string[];
   statusHints?: string[];
   tools?: McpRuntimeToolRow[];
-  connection?: McpMarketConnection;
+  connection?: McpProviderConnection;
   updatedAt?: string;
   installedAt?: string;
 };
 
-export type McpMarketConfig = {
-  registryBaseUrl?: string;
-  apiKeyRef?: string;
-  lastSyncAt?: string;
-};
-
 export type McpHubConfig = {
-  version: 2;
-  builtinProviders: Record<string, McpProviderConfigEntry>;
-  marketProviders: Record<string, McpProviderConfigEntry>;
-  marketConfig: McpMarketConfig;
+  version: 3;
+  providers: Record<string, McpProviderConfigEntry>;
 };
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
 const cleanString = (value: unknown) => String(value || "").trim();
-const KNOWN_BUILTIN_PROVIDER_IDS = new Set(
-  listMcpPresetProviderIds().map((providerId) => normalizeMcpProviderId(providerId)),
-);
-let didLogBuiltinProviderFilter = false;
 
 export function normalizeMcpProviderId(input: string): string {
   const raw = cleanString(input);
@@ -129,7 +117,7 @@ function sanitizeTools(input: unknown): McpRuntimeToolRow[] | undefined {
   return tools.length > 0 ? tools : undefined;
 }
 
-function sanitizeConnection(input: unknown): McpMarketConnection | undefined {
+function sanitizeConnection(input: unknown): McpProviderConnection | undefined {
   if (!isPlainObject(input)) return undefined;
   const type = cleanString(input.type).toLowerCase();
   if (type !== "http") return undefined;
@@ -152,14 +140,16 @@ function sanitizeConnection(input: unknown): McpMarketConnection | undefined {
 function sanitizeProviderEntry(
   providerId: string,
   input: unknown,
-  fallbackSource: McpProviderSource,
 ): McpProviderConfigEntry | null {
   if (!isPlainObject(input)) return null;
   const enabled = input.enabled !== false;
   const sourceRaw = cleanString(input.source).toLowerCase();
-  const source: McpProviderSource =
-    sourceRaw === "builtin" || sourceRaw === "market" ? sourceRaw : fallbackSource;
-  const presetId = cleanString(input.presetId);
+  const source: McpProviderSource | undefined =
+    sourceRaw === "manual" || sourceRaw === "builtin"
+      ? "manual"
+      : sourceRaw === "catalog" || sourceRaw === "market"
+        ? "catalog"
+        : undefined;
   const label = cleanString(input.label);
   const region = cleanString(input.region);
   const workspace = cleanString(input.workspace);
@@ -173,16 +163,12 @@ function sanitizeProviderEntry(
   const updatedAt = cleanString(input.updatedAt);
   const implementationSourceRaw = cleanString(input.implementationSource).toLowerCase();
   const implementationSource: McpImplementationSource | undefined =
-    implementationSourceRaw === "official" ||
-    implementationSourceRaw === "trusted-substitute" ||
-    implementationSourceRaw === "smithery"
+    implementationSourceRaw === "official" || implementationSourceRaw === "trusted-substitute"
       ? implementationSourceRaw
       : undefined;
 
   const next: McpProviderConfigEntry = {
-    source,
     enabled,
-    ...(presetId ? { presetId } : {}),
     ...(qualifiedName ? { qualifiedName } : {}),
     ...(label ? { label } : {}),
     ...(region ? { region } : {}),
@@ -195,6 +181,7 @@ function sanitizeProviderEntry(
     ...(installedAt ? { installedAt } : {}),
     ...(updatedAt ? { updatedAt } : {}),
     ...(implementationSource ? { implementationSource } : {}),
+    ...(source ? { source } : {}),
   };
 
   const scopes = sanitizeStringArray(input.scopes);
@@ -212,85 +199,45 @@ function sanitizeProviderEntry(
   const connection = sanitizeConnection(input.connection);
   if (connection) next.connection = connection;
 
-  if (!next.presetId && source === "builtin") {
-    next.presetId = providerId.replace(/^mcp:/, "");
-  }
-
   return next;
 }
 
 function sanitizeProviderMap(
   input: unknown,
-  source: McpProviderSource,
 ): Record<string, McpProviderConfigEntry> {
   if (!isPlainObject(input)) return {};
   const providers: Record<string, McpProviderConfigEntry> = {};
   for (const [providerIdRaw, providerValue] of Object.entries(input)) {
     const providerId = normalizeMcpProviderId(providerIdRaw);
     if (!providerId) continue;
-    const entry = sanitizeProviderEntry(providerId, providerValue, source);
+    const entry = sanitizeProviderEntry(providerId, providerValue);
     if (!entry) continue;
     providers[providerId] = entry;
   }
   return providers;
 }
 
-function filterBuiltinProvidersToKnownPresets(
-  providers: Record<string, McpProviderConfigEntry>,
-): {
-  providers: Record<string, McpProviderConfigEntry>;
-  droppedProviderIds: string[];
-} {
-  const filtered: Record<string, McpProviderConfigEntry> = {};
-  const droppedProviderIds: string[] = [];
-  for (const [providerId, entry] of Object.entries(providers)) {
-    const normalizedProviderId = normalizeMcpProviderId(providerId);
-    if (!normalizedProviderId || !KNOWN_BUILTIN_PROVIDER_IDS.has(normalizedProviderId)) {
-      droppedProviderIds.push(providerId);
-      continue;
-    }
-    filtered[normalizedProviderId] = entry;
-  }
-  return { providers: filtered, droppedProviderIds };
-}
-
-function sanitizeMarketConfig(input: unknown): McpMarketConfig {
-  if (!isPlainObject(input)) return {};
-  const registryBaseUrl = cleanString(input.registryBaseUrl);
-  const apiKeyRef = cleanString(input.apiKeyRef);
-  const lastSyncAt = cleanString(input.lastSyncAt);
-  return {
-    ...(registryBaseUrl ? { registryBaseUrl } : {}),
-    ...(apiKeyRef ? { apiKeyRef } : {}),
-    ...(lastSyncAt ? { lastSyncAt } : {}),
-  };
-}
-
 export function readMcpHubConfig(config: OpenClawConfig): McpHubConfig {
   const entry = config.plugins?.entries?.["mcp-hub"];
   const raw = isPlainObject(entry?.config) ? entry.config : {};
 
-  const version = Number(raw.version) === 2 ? 2 : 1;
-  const parsedBuiltinProviders = sanitizeProviderMap(
-    version === 2 ? raw.builtinProviders : raw.providers,
-    "builtin",
-  );
-  const { providers: builtinProviders, droppedProviderIds } =
-    filterBuiltinProvidersToKnownPresets(parsedBuiltinProviders);
-  if (droppedProviderIds.length > 0 && !didLogBuiltinProviderFilter) {
-    didLogBuiltinProviderFilter = true;
-    console.info(
-      `[mcp] filtered unsupported legacy built-in providers: ${droppedProviderIds.join(", ")}`,
-    );
+  const version = Number(raw.version);
+  let providers: Record<string, McpProviderConfigEntry> = {};
+  if (version === 3) {
+    providers = sanitizeProviderMap(raw.providers);
+  } else if (version === 2) {
+    providers = {
+      ...sanitizeProviderMap(raw.builtinProviders ?? raw.providers),
+      ...sanitizeProviderMap(raw.marketProviders),
+    };
+  } else {
+    // v1 legacy shape: { providers: { ... } }
+    providers = sanitizeProviderMap(raw.providers);
   }
-  const marketProviders = sanitizeProviderMap(raw.marketProviders, "market");
-  const marketConfig = sanitizeMarketConfig(raw.marketConfig);
 
   return {
-    version: 2,
-    builtinProviders,
-    marketProviders,
-    marketConfig,
+    version: 3,
+    providers,
   };
 }
 
@@ -303,7 +250,7 @@ function cloneProviderEntries(
     if (!providerId || !entry) continue;
     out[providerId] = {
       ...entry,
-      source: entry.source === "market" ? "market" : "builtin",
+      ...(entry.source ? { source: entry.source } : {}),
       enabled: entry.enabled !== false,
       ...(entry.scopes && entry.scopes.length > 0 ? { scopes: [...entry.scopes] } : {}),
       ...(entry.requiredSecrets && entry.requiredSecrets.length > 0
@@ -337,41 +284,24 @@ export function writeMcpHubConfig(
   config: OpenClawConfig,
   next:
     | McpHubConfig
-    | {
-        builtinProviders: Record<string, McpProviderConfigEntry>;
-        marketProviders: Record<string, McpProviderConfigEntry>;
-        marketConfig?: McpMarketConfig;
-      }
+    | { providers: Record<string, McpProviderConfigEntry> }
     | Record<string, McpProviderConfigEntry>,
 ): OpenClawConfig {
   const plugins = config.plugins ? { ...config.plugins } : {};
   const entries = plugins.entries ? { ...plugins.entries } : {};
   const mcpHubEntry = entries["mcp-hub"] ? { ...entries["mcp-hub"] } : {};
 
-  const asLegacyMap =
-    !isPlainObject(next) ||
-    (!("builtinProviders" in next) && !("marketProviders" in next) && !("version" in next));
-
-  const builtinProviders = asLegacyMap
-    ? cloneProviderEntries(next as Record<string, McpProviderConfigEntry>)
-    : cloneProviderEntries((next as { builtinProviders?: Record<string, McpProviderConfigEntry> }).builtinProviders || {});
-  const marketProviders = asLegacyMap
-    ? {}
-    : cloneProviderEntries((next as { marketProviders?: Record<string, McpProviderConfigEntry> }).marketProviders || {});
-  const marketConfig = asLegacyMap
-    ? {}
-    : sanitizeMarketConfig((next as { marketConfig?: McpMarketConfig }).marketConfig || {});
+  const providers =
+    isPlainObject(next) && "providers" in next
+      ? cloneProviderEntries((next as { providers?: Record<string, McpProviderConfigEntry> }).providers || {})
+      : cloneProviderEntries(next as Record<string, McpProviderConfigEntry>);
 
   mcpHubEntry.config = {
     ...(isPlainObject(mcpHubEntry.config) ? mcpHubEntry.config : {}),
-    version: 2,
-    // Keep providers for one-cycle compatibility.
-    providers: builtinProviders,
-    builtinProviders,
-    marketProviders,
-    marketConfig,
+    version: 3,
+    providers,
   };
-  // mcp-hub is the runtime owner for MCP presets and market installs.
+  // mcp-hub owns external MCP provider configuration.
   mcpHubEntry.enabled = true;
   entries["mcp-hub"] = mcpHubEntry;
   plugins.entries = entries;
@@ -383,10 +313,7 @@ export function writeMcpHubConfig(
 }
 
 export function listAllMcpProviders(hub: McpHubConfig): Record<string, McpProviderConfigEntry> {
-  return {
-    ...hub.builtinProviders,
-    ...hub.marketProviders,
-  };
+  return { ...hub.providers };
 }
 
 function sanitizeRefPart(input: string): string {
@@ -399,22 +326,8 @@ function sanitizeRefPart(input: string): string {
 export function buildMcpSecretRef(
   providerId: string,
   fieldKey: string,
-  source: McpProviderSource | "smithery" = "builtin",
 ): string {
   const normalizedField = sanitizeRefPart(fieldKey);
-  if (source === "smithery") {
-    return `mcp:smithery:${normalizedField}`;
-  }
   const normalizedProviderId = sanitizeRefPart(normalizeMcpProviderId(providerId));
-  return `mcp:${source}:${normalizedProviderId}:${normalizedField}`;
-}
-
-export function buildSmitheryApiKeyRef(): string {
-  return buildMcpSecretRef("smithery", "apiKey", "smithery");
-}
-
-export function buildMarketProviderId(qualifiedName: string): string {
-  const normalized = cleanString(qualifiedName).toLowerCase().replace(/[^a-z0-9]+/g, "-");
-  const safe = normalized || "provider";
-  return normalizeMcpProviderId(`mcp:market:${safe}`);
+  return `mcp:provider:${normalizedProviderId}:${normalizedField}`;
 }

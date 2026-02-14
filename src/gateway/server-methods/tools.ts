@@ -17,7 +17,7 @@ type ToolDefinition = {
   nodeId: string;
   nodeName: string;
   source?: "builtin" | "market";
-  implementationSource?: "official" | "trusted-substitute" | "smithery";
+  implementationSource?: "official" | "trusted-substitute";
 };
 
 type NodeAction = {

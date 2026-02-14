@@ -292,7 +292,7 @@ describe("gateway tool", () => {
 
     await tool.execute("call-tools-call-fallback", {
       action: "tools.call",
-      providerId: "mcp:market:exa",
+      providerId: "mcp:exa",
       toolName: "web_search_exa",
       query: "hello world",
     });
@@ -301,72 +301,9 @@ describe("gateway tool", () => {
       "tools.call",
       expect.any(Object),
       expect.objectContaining({
-        providerId: "mcp:market:exa",
+        providerId: "mcp:exa",
         toolName: "web_search_exa",
         params: { query: "hello world" },
-      }),
-    );
-  });
-
-  it("supports mcp.market.search via gateway call", async () => {
-    const { callGatewayTool } = await import("./tools/gateway.js");
-    vi.mocked(callGatewayTool).mockImplementation(async (method: string) => {
-      if (method === "mcp.market.search") {
-        return {
-          ok: true,
-          items: [{ qualifiedName: "smithery-ai/github", displayName: "GitHub" }],
-          pagination: { currentPage: 1, pageSize: 20, totalPages: 1, totalCount: 1 },
-        };
-      }
-      return { ok: true };
-    });
-
-    const tool = createOpenClawTools().find((candidate) => candidate.name === "gateway");
-    expect(tool).toBeDefined();
-    if (!tool) throw new Error("missing gateway tool");
-
-    const result = await tool.execute("call-mcp-market-search", {
-      action: "mcp.market.search",
-      query: "github",
-      page: 1,
-      pageSize: 20,
-    });
-    expect((result.details as { ok: boolean }).ok).toBe(true);
-    expect(callGatewayTool).toHaveBeenCalledWith(
-      "mcp.market.search",
-      expect.any(Object),
-      expect.objectContaining({
-        query: "github",
-        page: 1,
-        pageSize: 20,
-      }),
-    );
-  });
-
-  it("supports mcp.market.install via gateway call", async () => {
-    const { callGatewayTool } = await import("./tools/gateway.js");
-    const tool = createOpenClawTools().find((candidate) => candidate.name === "gateway");
-    expect(tool).toBeDefined();
-    if (!tool) throw new Error("missing gateway tool");
-
-    await tool.execute("call-mcp-market-install", {
-      action: "mcp.market.install",
-      qualifiedName: "smithery-ai/github",
-      providerId: "mcp:github-market",
-      providerLabel: "GitHub (Market)",
-      mcpFields: { deploymentUrl: "https://example.test/mcp" },
-      mcpSecretValues: { token: "secret-token" },
-    });
-
-    expect(callGatewayTool).toHaveBeenCalledWith(
-      "mcp.market.install",
-      expect.any(Object),
-      expect.objectContaining({
-        qualifiedName: "smithery-ai/github",
-        providerId: "mcp:github-market",
-        label: "GitHub (Market)",
-        fields: { deploymentUrl: "https://example.test/mcp" },
-        secretValues: { token: "secret-token" },
       }),
     );
   });

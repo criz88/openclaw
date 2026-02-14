@@ -429,7 +429,7 @@ export function buildAgentSystemPrompt(params: {
       ? [
           "Get Updates (self-update) is ONLY allowed when the user explicitly asks for it.",
           "Do not run config.apply, config.patch, or update.run unless the user explicitly requests an update or config change; if it's not explicit, ask first.",
-          "Actions: restart, config.get, config.schema, config.apply, config.patch, update.run, mcp.presets.list, mcp.providers.snapshot, mcp.providers.apply, mcp.market.search, mcp.market.detail, mcp.market.install, mcp.market.uninstall, mcp.market.refresh, tools.list, tools.call.",
+          "Actions: restart, config.get, config.schema, config.apply, config.patch, update.run, mcp.providers.snapshot, mcp.providers.apply, tools.list, tools.call.",
           "Use tools.list/tools.call to discover and invoke provider tools (including MCP) instead of guessing tool names.",
           "After restart, OpenClaw pings the last active session automatically.",
         ].join("\n")

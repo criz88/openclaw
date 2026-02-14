@@ -251,14 +251,8 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain("config.patch");
     expect(prompt).toContain("config.apply");
     expect(prompt).toContain("update.run");
-    expect(prompt).toContain("mcp.presets.list");
     expect(prompt).toContain("mcp.providers.snapshot");
     expect(prompt).toContain("mcp.providers.apply");
-    expect(prompt).toContain("mcp.market.search");
-    expect(prompt).toContain("mcp.market.detail");
-    expect(prompt).toContain("mcp.market.install");
-    expect(prompt).toContain("mcp.market.uninstall");
-    expect(prompt).toContain("mcp.market.refresh");
     expect(prompt).toContain("tools.list");
     expect(prompt).toContain("tools.call");
   });
