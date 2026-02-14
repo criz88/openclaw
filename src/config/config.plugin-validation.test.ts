@@ -184,6 +184,7 @@ describe("config plugin validation", () => {
                 version: 2,
                 builtinProviders: { "mcp:example": { enabled: true, source: "builtin" } },
                 marketProviders: { "mcp:market": { enabled: true, source: "market" } },
+                marketConfig: { registryBaseUrl: "https://registry.smithery.ai" },
               },
             },
           },

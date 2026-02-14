@@ -36,6 +36,11 @@
           "additionalProperties": true
         },
         "default": {}
+      },
+      "marketConfig": {
+        "type": "object",
+        "additionalProperties": true,
+        "default": {}
       }
     }
   }
