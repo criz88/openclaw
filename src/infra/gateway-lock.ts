@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { resolveConfigPath, resolveGatewayLockDir, resolveStateDir } from "../config/paths.js";
 
 const DEFAULT_TIMEOUT_MS = 5000;
@@ -86,6 +87,24 @@ function isGatewayArgv(args: string[]): boolean {
   return exe.endsWith("/openclaw") || exe === "openclaw";
 }
 
+function isGatewayCommandLineText(cmdline: string): boolean {
+  const normalized = normalizeProcArg(String(cmdline || ""));
+  if (!normalized.includes("gateway")) {
+    return false;
+  }
+  const entryCandidates = [
+    "dist/index.js",
+    "dist/entry.js",
+    "openclaw.mjs",
+    "scripts/run-node.mjs",
+    "src/index.ts",
+  ];
+  if (entryCandidates.some((entry) => normalized.includes(entry))) {
+    return true;
+  }
+  return normalized.includes("openclaw") && normalized.includes("gateway");
+}
+
 function readLinuxCmdline(pid: number): string[] | null {
   try {
     const raw = fsSync.readFileSync(`/proc/${pid}/cmdline`, "utf8");
@@ -111,6 +130,47 @@ function readLinuxStartTime(pid: number): number | null {
   }
 }
 
+function readDarwinCmdline(pid: number): string | null {
+  try {
+    return execFileSync("ps", ["-p", String(pid), "-o", "command="], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
+function readWindowsProcessInfo(pid: number): { name: string; commandLine: string } | null {
+  try {
+    const script = [
+      "$ErrorActionPreference='Stop'",
+      "$pid=$env:OPENCLAW_LOCK_PID",
+      "$p=Get-CimInstance Win32_Process -Filter \"ProcessId=$pid\" | Select-Object Name,CommandLine",
+      "if(-not $p){ throw 'process not found' }",
+      "$p | ConvertTo-Json -Compress",
+    ].join(";");
+    const raw = execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        OPENCLAW_LOCK_PID: String(pid),
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    }).trim();
+    const parsed = JSON.parse(raw || "{}") as any;
+    const name = String(parsed?.Name || "").trim();
+    const commandLine = String(parsed?.CommandLine || "").trim();
+    if (!name && !commandLine) {
+      return null;
+    }
+    return { name, commandLine };
+  } catch {
+    return null;
+  }
+}
+
 function resolveGatewayOwnerStatus(
   pid: number,
   payload: LockPayload | null,
@@ -120,6 +180,24 @@ function resolveGatewayOwnerStatus(
     return "dead";
   }
   if (platform !== "linux") {
+    // On non-Linux platforms, PIDs may be reused quickly. Verify that the lock owner is actually a gateway.
+    if (platform === "darwin") {
+      const cmdline = readDarwinCmdline(pid);
+      if (!cmdline) return "unknown";
+      return isGatewayCommandLineText(cmdline) ? "alive" : "dead";
+    }
+    if (platform === "win32") {
+      const info = readWindowsProcessInfo(pid);
+      if (!info) return "unknown";
+      const name = normalizeProcArg(info.name);
+      const cmd = info.commandLine;
+      // If it's obviously not a gateway process, consider the lock stale (PID reuse).
+      if (name && !name.includes("node") && !name.includes("openclaw")) {
+        return "dead";
+      }
+      if (!cmd) return "unknown";
+      return isGatewayCommandLineText(cmd) ? "alive" : "dead";
+    }
     return "alive";
   }
 
