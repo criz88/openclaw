@@ -109,9 +109,25 @@ async function fetchJson(params: {
       signal: controller.signal,
     });
     const text = await response.text();
-    const payload = text ? JSON.parse(text) : {};
+    const contentType = asString(response.headers.get("content-type")).toLowerCase();
+    let payload: unknown = {};
+    let parseFailed = false;
+    if (text) {
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        parseFailed = true;
+        payload = text;
+      }
+    }
     if (!response.ok) {
-      throw new Error(`Smithery ${response.status}: ${JSON.stringify(payload).slice(0, 400)}`);
+      const errorText = typeof payload === "string" ? payload : JSON.stringify(payload);
+      throw new Error(`Smithery ${response.status}: ${String(errorText || "request failed").slice(0, 400)}`);
+    }
+    if (parseFailed) {
+      throw new Error(
+        `Smithery returned non-JSON response (${contentType || "unknown"}): ${String(text).slice(0, 240)}`,
+      );
     }
     return payload;
   } finally {
@@ -166,15 +182,45 @@ function parseDetail(payload: unknown): SmitheryServerDetail {
 
   const connectionsRaw = Array.isArray(root.connections) ? root.connections : [];
   const connections: SmitheryServerConnection[] = [];
+  const resolveAuthType = (conn: Record<string, unknown>): "none" | "bearer" => {
+    const deploymentHost = (() => {
+      const raw = asString(conn.deploymentUrl);
+      if (!raw) return "";
+      try {
+        return new URL(raw).hostname.toLowerCase();
+      } catch {
+        return "";
+      }
+    })();
+
+    const authTypeRaw = asString(conn.authType).toLowerCase();
+    if (authTypeRaw === "none" || authTypeRaw === "bearer") return authTypeRaw;
+
+    // Smithery-hosted runtime endpoints typically require bearer tokens.
+    if (deploymentHost.endsWith(".run.tools")) {
+      return "bearer";
+    }
+
+    // Some Smithery servers omit authType; infer from security metadata when possible.
+    const securityRaw = root.security;
+    if (securityRaw === null || securityRaw === undefined) return "none";
+    try {
+      const serialized = JSON.stringify(securityRaw).toLowerCase();
+      if (/(bearer|oauth|token|authorization|api[_-]?key)/.test(serialized)) {
+        return "bearer";
+      }
+    } catch {
+      // ignore serialization failures and fall back to no auth
+    }
+    return "none";
+  };
   for (const connRaw of connectionsRaw) {
     const conn = asObject(connRaw);
     const type = asString(conn.type).toLowerCase();
     if (type !== "http") continue;
     const deploymentUrl = asString(conn.deploymentUrl);
     if (!deploymentUrl) continue;
-    const authTypeRaw = asString(conn.authType).toLowerCase();
-    const authType: "none" | "bearer" =
-      authTypeRaw === "none" || authTypeRaw === "bearer" ? authTypeRaw : "bearer";
+    const authType = resolveAuthType(conn);
     connections.push({
       type: "http",
       deploymentUrl,

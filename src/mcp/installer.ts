@@ -16,8 +16,10 @@ export type InstallMarketProviderInput = {
   label?: string;
   fields?: Record<string, McpProviderFieldValue>;
   secretValues?: Record<string, string | null>;
+  marketApiKey?: string;
   existing?: McpProviderConfigEntry;
   timeoutMs?: number;
+  validateConnectivity?: boolean;
 };
 
 export type InstallMarketProviderResult = {
@@ -40,6 +42,13 @@ type SecretWriteOutput = {
 };
 
 const asString = (value: unknown) => String(value || "").trim();
+
+const normalizeBearerToken = (value: unknown) => {
+  const raw = asString(value);
+  if (!raw) return "";
+  const match = raw.match(/^bearer\s+(.+)$/i);
+  return match ? asString(match[1]) : raw;
+};
 
 function normalizeFields(input: unknown): Record<string, McpProviderFieldValue> | undefined {
   if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
@@ -90,6 +99,7 @@ function buildBaseMarketEntry(params: {
     iconUrl: params.metadata.iconUrl,
     homepage: params.metadata.homepage,
     connection: params.metadata.connection,
+    requiredSecrets: inferRequiredSecrets(params.metadata),
     tools: convertTools(params.metadata.tools),
     fields: {
       ...(params.input.existing?.fields || {}),
@@ -106,6 +116,27 @@ function buildBaseMarketEntry(params: {
     delete base.tools;
   }
   return base;
+}
+
+function inferRequiredSecrets(metadata: SmitheryInstallMetadata): string[] {
+  const keys = new Set<string>();
+  const schema = metadata.connection?.configSchema;
+  if (schema && typeof schema === "object" && !Array.isArray(schema)) {
+    const required = Array.isArray((schema as any).required) ? ((schema as any).required as unknown[]) : [];
+    for (const raw of required) {
+      const key = asString(raw);
+      if (!key) continue;
+      if (/(token|key|secret|password|credential|auth)/i.test(key)) {
+        keys.add(key);
+      }
+    }
+  }
+  if ((metadata.connection?.authType || "bearer") !== "none") {
+    if (!keys.has("token") && !keys.has("apiKey") && !keys.has("authToken")) {
+      keys.add("apiKey");
+    }
+  }
+  return [...keys];
 }
 
 function applySecretValues(params: {
@@ -171,6 +202,7 @@ function rollbackSecrets(entries: Array<{ ref: string; previousValue: string | n
 function resolveSecretsForPreflight(params: {
   secretRefs?: Record<string, string>;
   secretValues?: Record<string, string | null>;
+  marketApiKey?: string;
 }): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [fieldKey, secretRef] of Object.entries(params.secretRefs || {})) {
@@ -186,6 +218,10 @@ function resolveSecretsForPreflight(params: {
     if (stored) {
       out[fieldKey] = stored;
     }
+  }
+  const fallbackMarketApiKey = normalizeBearerToken(params.marketApiKey);
+  if (fallbackMarketApiKey && !asString(out.token) && !asString(out.apiKey) && !asString(out.authToken)) {
+    out.apiKey = fallbackMarketApiKey;
   }
   return out;
 }
@@ -221,7 +257,16 @@ export async function installMarketProvider(params: {
   const resolvedSecrets = resolveSecretsForPreflight({
     secretRefs: baseEntry.secretRefs,
     secretValues: params.input.secretValues,
+    marketApiKey: params.input.marketApiKey,
   });
+
+  const shouldValidateConnectivity = params.input.validateConnectivity === true;
+  if (!shouldValidateConnectivity) {
+    return {
+      ok: true,
+      entry: baseEntry,
+    };
+  }
 
   const preflight = await preflightMcpHttpProvider({
     provider: baseEntry,

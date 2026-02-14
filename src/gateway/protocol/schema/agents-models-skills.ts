@@ -362,6 +362,14 @@ export const McpProviderStateSchema = Type.Object(
     configured: Type.Boolean(),
     enabled: Type.Boolean(),
     available: Type.Boolean(),
+    lifecycleStage: Type.Optional(
+      Type.Union([
+        Type.Literal("not-installed"),
+        Type.Literal("installed"),
+        Type.Literal("configured"),
+        Type.Literal("available"),
+      ]),
+    ),
     toolCount: Type.Integer({ minimum: 0 }),
     iconKey: Type.Optional(Type.String()),
     iconUrl: Type.Optional(Type.String()),
@@ -376,6 +384,7 @@ export const McpProviderStateSchema = Type.Object(
     requiredSecrets: Type.Optional(Type.Array(Type.String())),
     statusHints: Type.Optional(Type.Array(Type.String())),
     secretState: Type.Optional(Type.Record(Type.String(), Type.Boolean())),
+    secretLengths: Type.Optional(Type.Record(Type.String(), Type.Integer({ minimum: 0 }))),
     updatedAt: Type.Optional(Type.String()),
     installedAt: Type.Optional(Type.String()),
   },
@@ -460,6 +469,7 @@ export const McpMarketSearchParamsSchema = Type.Object(
     page: Type.Optional(Type.Integer({ minimum: 1 })),
     pageSize: Type.Optional(Type.Integer({ minimum: 1, maximum: 50 })),
     registryBaseUrl: Type.Optional(Type.String()),
+    smitheryApiKey: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   },
   { additionalProperties: false },
 );
@@ -509,6 +519,7 @@ export const McpMarketDetailParamsSchema = Type.Object(
   {
     qualifiedName: NonEmptyString,
     registryBaseUrl: Type.Optional(Type.String()),
+    smitheryApiKey: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   },
   { additionalProperties: false },
 );

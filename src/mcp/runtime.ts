@@ -6,7 +6,12 @@ import type {
   McpProviderFieldValue,
   McpRuntimeToolRow,
 } from "./config.js";
-import { listAllMcpProviders, normalizeMcpProviderId, readMcpHubConfig } from "./config.js";
+import {
+  buildSmitheryApiKeyRef,
+  listAllMcpProviders,
+  normalizeMcpProviderId,
+  readMcpHubConfig,
+} from "./config.js";
 import { getSecret } from "./secret-store.js";
 
 type ToolProviderKind = "mcp";
@@ -88,6 +93,13 @@ function asObject(value: unknown): Record<string, unknown> {
 
 function asString(value: unknown): string {
   return String(value ?? "").trim();
+}
+
+function normalizeBearerToken(value: unknown): string {
+  const raw = asString(value);
+  if (!raw) return "";
+  const match = raw.match(/^bearer\s+(.+)$/i);
+  return match ? asString(match[1]) : raw;
 }
 
 function asNumber(value: unknown, fallback: number): number {
@@ -204,12 +216,49 @@ function resolveProviderSecrets(entry: McpProviderConfigEntry): Record<string, s
   return out;
 }
 
+function resolveMarketApiKey(hub: McpHubConfig): string {
+  const configuredRef = asString(hub.marketConfig.apiKeyRef);
+  if (configuredRef) {
+    const configured = asString(getSecret(configuredRef));
+    if (configured) return configured;
+  }
+  return asString(getSecret(buildSmitheryApiKeyRef()));
+}
+
+function withMarketAuthFallback(
+  entry: McpProviderConfigEntry,
+  secrets: Record<string, string>,
+  marketApiKey: string,
+): Record<string, string> {
+  if (entry.source !== "market") return secrets;
+  if (!marketApiKey) return secrets;
+  if (asString(secrets.token) || asString(secrets.apiKey) || asString(secrets.authToken)) {
+    return secrets;
+  }
+  return { ...secrets, apiKey: marketApiKey };
+}
+
+function isAuthSecretAlias(key: string) {
+  const normalized = asString(key).toLowerCase();
+  return normalized === "token" || normalized === "apikey" || normalized === "authtoken";
+}
+
 function hasRequiredSecrets(entry: McpProviderConfigEntry, secrets: Record<string, string>) {
   const requiredSecrets = Array.isArray(entry.requiredSecrets) ? entry.requiredSecrets : [];
   for (const key of requiredSecrets) {
     const fieldKey = asString(key);
     if (!fieldKey) continue;
-    if (!asString(secrets[fieldKey])) {
+    const direct = asString(secrets[fieldKey]);
+    if (direct) {
+      continue;
+    }
+    if (
+      isAuthSecretAlias(fieldKey) &&
+      (asString(secrets.token) || asString(secrets.apiKey) || asString(secrets.authToken))
+    ) {
+      continue;
+    }
+    if (!direct) {
       return false;
     }
   }
@@ -664,6 +713,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 export function listMcpRuntimeToolDefinitions(config: OpenClawConfig): McpRuntimeToolDefinition[] {
   const hub = readMcpHubConfig(config);
+  const marketApiKey = resolveMarketApiKey(hub);
   const definitions: McpRuntimeToolDefinition[] = [];
 
   for (const [providerIdRaw, entry] of Object.entries(hub.builtinProviders)) {
@@ -692,7 +742,7 @@ export function listMcpRuntimeToolDefinitions(config: OpenClawConfig): McpRuntim
   for (const [providerIdRaw, entry] of Object.entries(hub.marketProviders)) {
     const providerId = normalizeMcpProviderId(providerIdRaw);
     if (!providerId || entry.enabled !== true) continue;
-    const secrets = resolveProviderSecrets(entry);
+    const secrets = withMarketAuthFallback(entry, resolveProviderSecrets(entry), marketApiKey);
     if (!hasRequiredSecrets(entry, secrets)) continue;
     const tools = Array.isArray(entry.tools) ? entry.tools : [];
     for (const tool of tools) {
@@ -714,17 +764,54 @@ function resolveMcpHttpEndpoint(entry: McpProviderConfigEntry): string {
 
 function buildMcpAuthHeaders(entry: McpProviderConfigEntry, secrets: Record<string, string>) {
   const headers: Record<string, string> = {
-    Accept: "application/json",
+    // Streamable HTTP servers (including Smithery connect.mcp) may respond with SSE.
+    Accept: "application/json, text/event-stream",
     "Content-Type": "application/json",
   };
   const authType = asString(entry.connection?.authType).toLowerCase() || "bearer";
-  if (authType === "none") return headers;
-  const token = asString(secrets.token || secrets.apiKey || secrets.authToken);
+  const token = normalizeBearerToken(secrets.token || secrets.apiKey || secrets.authToken);
+  if (authType === "none") {
+    // Some Smithery entries declare authType=none while deployment still accepts bearer.
+    if (entry.source === "market" && token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    return headers;
+  }
   if (!token) {
     throw new Error("MCP provider auth token is required");
   }
   headers.Authorization = `Bearer ${token}`;
   return headers;
+}
+
+function parseSseJsonRpcResponse(text: string): McpJsonRpcResponse {
+  // Minimal SSE parser for Streamable HTTP responses.
+  // We only need the JSON payload emitted in `data:` lines.
+  const blocks = String(text || "").split(/\r?\n\r?\n/);
+  let last: McpJsonRpcResponse | null = null;
+  for (const block of blocks) {
+    const lines = block.split(/\r?\n/);
+    const dataLines: string[] = [];
+    for (const line of lines) {
+      if (!line.startsWith("data:")) continue;
+      dataLines.push(line.slice("data:".length).trimStart());
+    }
+    if (dataLines.length === 0) continue;
+    const data = dataLines.join("\n").trim();
+    if (!data || data === "[DONE]") continue;
+    try {
+      const parsed = JSON.parse(data) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        last = parsed as McpJsonRpcResponse;
+      }
+    } catch {
+      // ignore invalid chunks
+    }
+  }
+  if (!last) {
+    throw new Error(`MCP endpoint returned SSE without JSON payload: ${String(text).slice(0, 240)}`);
+  }
+  return last;
 }
 
 async function postMcpJsonRpc(params: {
@@ -749,7 +836,21 @@ async function postMcpJsonRpc(params: {
       signal: controller.signal,
     });
     const text = await response.text();
-    const payload = text ? (JSON.parse(text) as McpJsonRpcResponse) : {};
+    const contentType = asString(response.headers.get("content-type")).toLowerCase();
+    let payload: McpJsonRpcResponse = {};
+    if (text) {
+      try {
+        if (contentType.includes("text/event-stream")) {
+          payload = parseSseJsonRpcResponse(text);
+        } else {
+          payload = JSON.parse(text) as McpJsonRpcResponse;
+        }
+      } catch (error) {
+        throw new Error(
+          `MCP endpoint returned non-JSON (${contentType || "unknown"}): ${text.slice(0, 500)}`,
+        );
+      }
+    }
     if (!response.ok) {
       throw new Error(`MCP HTTP ${response.status}: ${text.slice(0, 500)}`);
     }
@@ -773,7 +874,7 @@ async function establishMcpHttpSession(params: {
       `${params.deploymentUrl.replace(/\/+$/, "")}/mcp`,
     ]),
   );
-  let lastError = "failed to initialize MCP session";
+  const errors: string[] = [];
   for (const endpoint of candidates) {
     try {
       const init = await postMcpJsonRpc({
@@ -809,10 +910,15 @@ async function establishMcpHttpSession(params: {
       });
       return { endpoint, ...(init.sessionId ? { sessionId: init.sessionId } : {}) };
     } catch (error) {
-      lastError = String((error as Error)?.message || error || "unknown");
+      errors.push(`${endpoint}: ${String((error as Error)?.message || error || "unknown")}`);
     }
   }
-  throw new Error(lastError);
+  const preferredError =
+    errors.find((item) => /(invalid[_\\s-]?token|authorization|unauthorized|\\b401\\b)/i.test(item)) ||
+    errors.find((item) => !/server not found/i.test(item)) ||
+    errors[0] ||
+    "failed to initialize MCP session";
+  throw new Error(preferredError);
 }
 
 async function mcpHttpToolsList(params: {
@@ -989,6 +1095,7 @@ async function invokeMarketRuntimeTool(params: {
 export async function invokeMcpRuntimeTool(params: McpRuntimeInvokeParams) {
   const providerId = normalizeMcpProviderId(params.providerId);
   const hub = readMcpHubConfig(params.config);
+  const marketApiKey = resolveMarketApiKey(hub);
   const builtinSpec = resolveBuiltinProviderSpec(providerId);
   const ctx = resolveProviderState(params.config, providerId);
   const args = asObject(params.args);
@@ -1006,12 +1113,13 @@ export async function invokeMcpRuntimeTool(params: McpRuntimeInvokeParams) {
   if (!marketEntry) {
     throw new Error(`Unsupported MCP provider: ${providerId}`);
   }
+  const marketSecrets = withMarketAuthFallback(marketEntry, ctx.secrets, marketApiKey);
   return await invokeMarketRuntimeTool({
     providerId,
     entry: marketEntry,
     args,
     command,
-    secrets: ctx.secrets,
+    secrets: marketSecrets,
     timeoutMs: params.timeoutMs,
   });
 }
