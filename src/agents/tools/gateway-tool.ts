@@ -99,6 +99,49 @@ export function createGatewayTool(opts?: {
   agentSessionKey?: string;
   config?: OpenClawConfig;
 }): AnyAgentTool {
+  const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+    Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+  const resolveToolsCallArgs = (params: Record<string, unknown>): Record<string, unknown> => {
+    // Primary: explicit toolArgs
+    const explicit = params.toolArgs;
+    if (isPlainObject(explicit)) {
+      return explicit;
+    }
+
+    // Back-compat / common aliases (models often use "params"/"arguments").
+    const aliasParams = (params as Record<string, unknown>).params;
+    if (isPlainObject(aliasParams)) {
+      return aliasParams;
+    }
+    const aliasArguments = (params as Record<string, unknown>).arguments;
+    if (isPlainObject(aliasArguments)) {
+      return aliasArguments;
+    }
+
+    // Fallback: forward top-level fields (except gateway routing + wrapper keys).
+    // This allows calls like: { action:"tools.call", providerId, toolName, query:"..." }.
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(params)) {
+      if (
+        key === "action" ||
+        key === "gatewayUrl" ||
+        key === "gatewayToken" ||
+        key === "timeoutMs" ||
+        key === "providerId" ||
+        key === "toolName" ||
+        key === "toolArgs" ||
+        key === "params" ||
+        key === "arguments"
+      ) {
+        continue;
+      }
+      if (value === undefined) continue;
+      out[key] = value;
+    }
+    return out;
+  };
+
   return {
     label: "Gateway",
     name: "gateway",
@@ -430,10 +473,7 @@ export function createGatewayTool(opts?: {
       if (action === "tools.call") {
         const providerId = readStringParam(params, "providerId", { required: true });
         const toolName = readStringParam(params, "toolName", { required: true });
-        const toolArgs =
-          params.toolArgs && typeof params.toolArgs === "object" && !Array.isArray(params.toolArgs)
-            ? params.toolArgs
-            : {};
+        const toolArgs = resolveToolsCallArgs(params);
         const invokeResult = await callGatewayTool("tools.call", gatewayOpts, {
           providerId,
           toolName,

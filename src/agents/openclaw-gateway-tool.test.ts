@@ -271,6 +271,43 @@ describe("gateway tool", () => {
     );
   });
 
+  it("forwards top-level args for tools.call when toolArgs is missing", async () => {
+    const { callGatewayTool } = await import("./tools/gateway.js");
+    vi.mocked(callGatewayTool).mockImplementation(async (method: string, _opts: unknown, params: unknown) => {
+      if (method === "tools.call") {
+        return {
+          ok: true,
+          providerId: "mcp:market:exa",
+          toolName: "mcp:market:exa.web_search_exa",
+          command: "web_search_exa",
+          result: { ok: true },
+          params,
+        };
+      }
+      return { ok: true };
+    });
+    const tool = createOpenClawTools().find((candidate) => candidate.name === "gateway");
+    expect(tool).toBeDefined();
+    if (!tool) throw new Error("missing gateway tool");
+
+    await tool.execute("call-tools-call-fallback", {
+      action: "tools.call",
+      providerId: "mcp:market:exa",
+      toolName: "web_search_exa",
+      query: "hello world",
+    });
+
+    expect(callGatewayTool).toHaveBeenCalledWith(
+      "tools.call",
+      expect.any(Object),
+      expect.objectContaining({
+        providerId: "mcp:market:exa",
+        toolName: "web_search_exa",
+        params: { query: "hello world" },
+      }),
+    );
+  });
+
   it("supports mcp.market.search via gateway call", async () => {
     const { callGatewayTool } = await import("./tools/gateway.js");
     vi.mocked(callGatewayTool).mockImplementation(async (method: string) => {
