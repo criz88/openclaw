@@ -111,13 +111,22 @@ async function runCowsay(): Promise<{ ok: boolean; output?: string; error?: stri
   });
 }
 
-async function readJson(req: IncomingMessage): Promise<any> {
+type UnknownRecord = Record<string, unknown>;
+function asRecord(value: unknown): UnknownRecord | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value as UnknownRecord;
+}
+
+async function readJson(req: IncomingMessage): Promise<UnknownRecord> {
   return await new Promise((resolve) => {
     let data = "";
     req.on("data", (chunk) => (data += chunk.toString()));
     req.on("end", () => {
       try {
-        resolve(data ? JSON.parse(data) : {});
+        const parsed: unknown = data ? JSON.parse(data) : {};
+        resolve(asRecord(parsed) ?? {});
       } catch {
         resolve({});
       }
@@ -125,11 +134,15 @@ async function readJson(req: IncomingMessage): Promise<any> {
   });
 }
 
-function extractAssistantTexts(result: any): string[] {
-  const payloads = Array.isArray(result?.payloads) ? result.payloads : [];
+function extractAssistantTexts(result: unknown): string[] {
+  const record = asRecord(result);
+  const payloads = record && Array.isArray(record.payloads) ? record.payloads : [];
   const texts = payloads
-    .map((p: any) => (typeof p?.text === "string" ? p.text.trim() : ""))
-    .filter((t: string) => t.length > 0);
+    .map((p) => {
+      const payload = asRecord(p);
+      return typeof payload?.text === "string" ? payload.text.trim() : "";
+    })
+    .filter((t) => t.length > 0);
   return texts;
 }
 
@@ -150,7 +163,7 @@ export async function startGatewayAdminPipe(params: {
   log: { info: (msg: string) => void; warn: (msg: string) => void };
 }): Promise<AdminPipeServer> {
   let lastConfig: OpenClawConfig | null = null;
-  let lastSnapshot: ConfigFileSnapshot | null = null;
+  let _lastSnapshot: ConfigFileSnapshot | null = null;
 
   const pipePath = resolveAdminPipePath();
   if (process.platform !== "win32" && pipePath.startsWith("/")) {
@@ -231,7 +244,7 @@ export async function startGatewayAdminPipe(params: {
         return methodNotAllowed(res);
       }
       const snapshot = await readConfigFileSnapshot();
-      lastSnapshot = snapshot;
+      _lastSnapshot = snapshot;
       if (snapshot.valid) {
         lastConfig = snapshot.config;
       }
@@ -307,7 +320,7 @@ export async function startGatewayAdminPipe(params: {
         return methodNotAllowed(res);
       }
       const snapshot = await readConfigFileSnapshot();
-      lastSnapshot = snapshot;
+      _lastSnapshot = snapshot;
       if (!snapshot.valid) {
         return sendJson(res, 400, { ok: false, error: "invalid config", issues: snapshot.issues });
       }
@@ -538,7 +551,7 @@ export async function startGatewayAdminPipe(params: {
       const { loadConfig } = await import("../config/config.js");
       try {
         const channel = resolvePairingChannel(body?.channel);
-        const code = String(body?.code || "").trim();
+        const code = typeof body?.code === "string" ? body.code.trim() : "";
         const notify = body?.notify === true;
         const approved = await approveChannelPairingCode({ channel, code });
         if (!approved) {
@@ -582,17 +595,19 @@ export async function startGatewayAdminPipe(params: {
       const { loadConfig } = await import("../config/config.js");
       const coreEntries = listChatChannels();
       const installedEntries = listChannelPlugins();
-      const coreChannels = coreEntries.map((entry: any) => entry.id);
-      const installedChannels = installedEntries.map((entry: any) => entry.id);
+      const coreChannels = coreEntries.map((entry: { id: string }) => entry.id);
+      const installedChannels = installedEntries.map((entry: { id: string }) => entry.id);
       let catalogChannels: string[] = [];
       let catalogEntries: Array<{ id: string; meta?: { label?: string } }> = [];
       try {
         const cfg = loadConfig();
         const workspaceDir = resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg));
-        catalogEntries = listChannelPluginCatalogEntries({ workspaceDir }).map((entry: any) => ({
-          id: entry.id,
-          meta: entry.meta,
-        }));
+        catalogEntries = listChannelPluginCatalogEntries({ workspaceDir }).map(
+          (entry: { id: string; meta?: { label?: string } }) => ({
+            id: entry.id,
+            meta: entry.meta,
+          }),
+        );
         catalogChannels = catalogEntries.map((entry) => entry.id);
       } catch {
         catalogChannels = [];
@@ -732,7 +747,7 @@ export async function startGatewayAdminPipe(params: {
       const { discoverOpenClawPlugins } = await import("../plugins/discovery.js");
       const { resolveBundledPluginsDir } = await import("../plugins/bundled-dir.js");
       const channelInput = typeof body?.channel === "string" ? body.channel.trim() : "";
-      const availableChannels = listChatChannels().map((entry: any) => entry.id);
+      const availableChannels = listChatChannels().map((entry: { id: string }) => entry.id);
       if (!channelInput) {
         return sendJson(res, 400, {
           ok: false,
@@ -740,7 +755,7 @@ export async function startGatewayAdminPipe(params: {
           availableChannels,
         });
       }
-      let installedChannels = listChannelPlugins().map((p: any) => p.id);
+      let installedChannels = listChannelPlugins().map((p: { id: string }) => p.id);
       let pluginDiagnostics: unknown[] | undefined;
       let pluginDiscovery: { bundledDir?: string; candidates?: string[] } | undefined;
       if (installedChannels.length === 0) {
@@ -748,12 +763,14 @@ export async function startGatewayAdminPipe(params: {
           const cfg = loadConfig();
           const workspaceDir = resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg));
           const registry = loadOpenClawPlugins({ config: cfg, workspaceDir });
-          installedChannels = registry.channels.map((entry: any) => entry.plugin.id);
+          installedChannels = registry.channels.map(
+            (entry: { plugin: { id: string } }) => entry.plugin.id,
+          );
           pluginDiagnostics = registry.diagnostics;
           const discovery = discoverOpenClawPlugins({ workspaceDir });
           pluginDiscovery = {
             bundledDir: resolveBundledPluginsDir(),
-            candidates: discovery.candidates.map((c: any) => c.idHint),
+            candidates: discovery.candidates.map((c: { idHint: string }) => c.idHint),
           };
         } catch (err) {
           pluginDiagnostics = [{ level: "error", message: String(err) }];
@@ -764,7 +781,7 @@ export async function startGatewayAdminPipe(params: {
         const cfg = loadConfig();
         const workspaceDir = resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg));
         const catalogChannels = listChannelPluginCatalogEntries({ workspaceDir }).map(
-          (entry: any) => entry.id,
+          (entry: { id: string }) => entry.id,
         );
         if (pluginDiscovery?.candidates?.includes(channelInput)) {
           const allow = Array.isArray(cfg.plugins?.allow) ? cfg.plugins?.allow : undefined;
@@ -787,7 +804,9 @@ export async function startGatewayAdminPipe(params: {
           };
           await writeConfigFile(nextConfig);
           const registry = loadOpenClawPlugins({ config: nextConfig, workspaceDir });
-          installedChannels = registry.channels.map((entry: any) => entry.plugin.id);
+          installedChannels = registry.channels.map(
+            (entry: { plugin: { id: string } }) => entry.plugin.id,
+          );
           pluginDiagnostics = registry.diagnostics;
         }
         if (!installedChannels.includes(channelInput)) {
@@ -890,7 +909,7 @@ export async function startGatewayAdminPipe(params: {
       const { discoverOpenClawPlugins } = await import("../plugins/discovery.js");
       const { resolveBundledPluginsDir } = await import("../plugins/bundled-dir.js");
       const channelInput = typeof body?.channel === "string" ? body.channel.trim() : "";
-      const availableChannels = listChatChannels().map((entry: any) => entry.id);
+      const availableChannels = listChatChannels().map((entry: { id: string }) => entry.id);
       if (!channelInput) {
         return sendJson(res, 400, {
           ok: false,
@@ -898,7 +917,7 @@ export async function startGatewayAdminPipe(params: {
           availableChannels,
         });
       }
-      let installedChannels = listChannelPlugins().map((p: any) => p.id);
+      let installedChannels = listChannelPlugins().map((p: { id: string }) => p.id);
       let pluginDiagnostics: unknown[] | undefined;
       let pluginDiscovery: { bundledDir?: string; candidates?: string[] } | undefined;
       if (installedChannels.length === 0) {
@@ -906,12 +925,14 @@ export async function startGatewayAdminPipe(params: {
           const cfg = loadConfig();
           const workspaceDir = resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg));
           const registry = loadOpenClawPlugins({ config: cfg, workspaceDir });
-          installedChannels = registry.channels.map((entry: any) => entry.plugin.id);
+          installedChannels = registry.channels.map(
+            (entry: { plugin: { id: string } }) => entry.plugin.id,
+          );
           pluginDiagnostics = registry.diagnostics;
           const discovery = discoverOpenClawPlugins({ workspaceDir });
           pluginDiscovery = {
             bundledDir: resolveBundledPluginsDir(),
-            candidates: discovery.candidates.map((c: any) => c.idHint),
+            candidates: discovery.candidates.map((c: { idHint: string }) => c.idHint),
           };
         } catch (err) {
           pluginDiagnostics = [{ level: "error", message: String(err) }];
@@ -922,7 +943,7 @@ export async function startGatewayAdminPipe(params: {
         const cfg = loadConfig();
         const workspaceDir = resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg));
         const catalogChannels = listChannelPluginCatalogEntries({ workspaceDir }).map(
-          (entry: any) => entry.id,
+          (entry: { id: string }) => entry.id,
         );
         if (pluginDiscovery?.candidates?.includes(channelInput)) {
           const allow = Array.isArray(cfg.plugins?.allow) ? cfg.plugins?.allow : undefined;
@@ -945,7 +966,9 @@ export async function startGatewayAdminPipe(params: {
           };
           await writeConfigFile(nextConfig);
           const registry = loadOpenClawPlugins({ config: nextConfig, workspaceDir });
-          installedChannels = registry.channels.map((entry: any) => entry.plugin.id);
+          installedChannels = registry.channels.map(
+            (entry: { plugin: { id: string } }) => entry.plugin.id,
+          );
           pluginDiagnostics = registry.diagnostics;
         }
         if (!installedChannels.includes(channelInput)) {
