@@ -13,6 +13,7 @@ import { execApprovalsHandlers } from "./server-methods/exec-approvals.js";
 import { healthHandlers } from "./server-methods/health.js";
 import { logsHandlers } from "./server-methods/logs.js";
 import { mcpHandlers } from "./server-methods/mcp.js";
+import { metaHandlers } from "./server-methods/meta.js";
 import { modelsHandlers } from "./server-methods/models.js";
 import { nodeHandlers } from "./server-methods/nodes.js";
 import { oauthHandlers } from "./server-methods/oauth.js";
@@ -65,6 +66,14 @@ const ADMIN_METHOD_PREFIXES = ["exec.approvals."];
 const READ_METHODS = new Set([
   "health",
   "logs.tail",
+  "meta.get",
+  "meta",
+  "gateway.meta",
+  "system.meta",
+  "capabilities.list",
+  "capabilities.get",
+  "capabilities",
+  "gateway.capabilities",
   "channels.status",
   "channels.list",
   "channels.capabilities",
@@ -216,6 +225,7 @@ function authorizeGatewayMethod(method: string, client: GatewayRequestOptions["c
 export const coreGatewayHandlers: GatewayRequestHandlers = {
   ...connectHandlers,
   ...logsHandlers,
+  ...metaHandlers,
   ...voicewakeHandlers,
   ...healthHandlers,
   ...channelsHandlers,
