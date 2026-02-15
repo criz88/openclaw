@@ -1,22 +1,22 @@
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { spawn } from "node:child_process";
-import { agentCommand } from "../commands/agent.js";
-import { defaultRuntime } from "../runtime.js";
 import os from "node:os";
 import path from "node:path";
 import type { OpenClawConfig, ConfigFileSnapshot } from "../config/config.js";
 import type { NodeRegistry } from "./node-registry.js";
-import { CONFIG_PATH, readConfigFileSnapshot, writeConfigFile } from "../config/config.js";
-import { VERSION } from "../version.js";
-import { listToolDefinitions } from "./server-methods/tools.js";
-import { loadGatewayModelCatalog } from "./server-model-catalog.js";
+import { agentCommand } from "../commands/agent.js";
 import { modelsSetCommand } from "../commands/models/set.js";
+import { CONFIG_PATH, readConfigFileSnapshot, writeConfigFile } from "../config/config.js";
+import { defaultRuntime } from "../runtime.js";
+import { VERSION } from "../version.js";
 import {
   buildGatewayReloadPlan,
   diffConfigPaths,
   resolveGatewayReloadSettings,
 } from "./config-reload.js";
+import { listToolDefinitions } from "./server-methods/tools.js";
+import { loadGatewayModelCatalog } from "./server-model-catalog.js";
 
 export type AdminPipeReloadHandlers = {
   applyHotReload: (
@@ -36,11 +36,13 @@ export type AdminPipeServer = {
 
 const extractJsonFromLog = (raw: string) => {
   const trimmed = raw.trim();
-  if (!trimmed) return null;
-  const start = Math.min(
-    ...[trimmed.indexOf("{"), trimmed.indexOf("[")].filter((idx) => idx >= 0),
-  );
-  if (!Number.isFinite(start)) return null;
+  if (!trimmed) {
+    return null;
+  }
+  const start = Math.min(...[trimmed.indexOf("{"), trimmed.indexOf("[")].filter((idx) => idx >= 0));
+  if (!Number.isFinite(start)) {
+    return null;
+  }
   const payload = trimmed.slice(start);
   return JSON.parse(payload);
 };
@@ -71,7 +73,9 @@ async function runJsonCommand(run: (runtime: typeof defaultRuntime) => Promise<v
 
 function resolveAdminPipePath() {
   const env = String(process.env.OPENCLAW_ADMIN_PIPE || "").trim();
-  if (env) return env;
+  if (env) {
+    return env;
+  }
   if (process.platform === "win32") {
     return "\\\\.\\pipe\\openclaw-admin";
   }
@@ -98,8 +102,11 @@ async function runCowsay(): Promise<{ ok: boolean; output?: string; error?: stri
     proc.stdout?.on("data", (chunk) => (out += String(chunk)));
     proc.stderr?.on("data", (chunk) => (err += String(chunk)));
     proc.on("exit", (code) => {
-      if (code === 0) resolve({ ok: true, output: out.trim() });
-      else resolve({ ok: false, error: err.trim() || "cowsay failed" });
+      if (code === 0) {
+        resolve({ ok: true, output: out.trim() });
+      } else {
+        resolve({ ok: false, error: err.trim() || "cowsay failed" });
+      }
     });
   });
 }
@@ -148,7 +155,9 @@ export async function startGatewayAdminPipe(params: {
   const pipePath = resolveAdminPipePath();
   if (process.platform !== "win32" && pipePath.startsWith("/")) {
     try {
-      if (fs.existsSync(pipePath)) fs.unlinkSync(pipePath);
+      if (fs.existsSync(pipePath)) {
+        fs.unlinkSync(pipePath);
+      }
     } catch {
       /* ignore */
     }
@@ -157,7 +166,9 @@ export async function startGatewayAdminPipe(params: {
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url || "/", "http://localhost");
     if (url.pathname === "/api/v1/status") {
-      if (req.method !== "GET") return methodNotAllowed(res);
+      if (req.method !== "GET") {
+        return methodNotAllowed(res);
+      }
       const status = {
         ok: true,
         version: VERSION,
@@ -173,7 +184,9 @@ export async function startGatewayAdminPipe(params: {
     }
 
     if (url.pathname === "/api/v1/nodes") {
-      if (req.method !== "GET") return methodNotAllowed(res);
+      if (req.method !== "GET") {
+        return methodNotAllowed(res);
+      }
       const nodes = params.nodeRegistry.listConnected().map((n) => ({
         nodeId: n.nodeId,
         displayName: n.displayName,
@@ -195,7 +208,9 @@ export async function startGatewayAdminPipe(params: {
     }
 
     if (url.pathname === "/api/v1/nodes/invoke") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const body = await readJson(req);
       const nodeId = typeof body?.nodeId === "string" ? body.nodeId.trim() : "";
       const command = typeof body?.command === "string" ? body.command.trim() : "";
@@ -212,10 +227,14 @@ export async function startGatewayAdminPipe(params: {
     }
 
     if (url.pathname === "/api/v1/config") {
-      if (req.method !== "GET") return methodNotAllowed(res);
+      if (req.method !== "GET") {
+        return methodNotAllowed(res);
+      }
       const snapshot = await readConfigFileSnapshot();
       lastSnapshot = snapshot;
-      if (snapshot.valid) lastConfig = snapshot.config;
+      if (snapshot.valid) {
+        lastConfig = snapshot.config;
+      }
       return sendJson(res, 200, {
         ok: snapshot.valid,
         config: snapshot.valid ? snapshot.config : null,
@@ -224,13 +243,17 @@ export async function startGatewayAdminPipe(params: {
     }
 
     if (url.pathname === "/api/v1/models/list") {
-      if (req.method !== "GET") return methodNotAllowed(res);
+      if (req.method !== "GET") {
+        return methodNotAllowed(res);
+      }
       const models = await loadGatewayModelCatalog();
       return sendJson(res, 200, { ok: true, models });
     }
 
     if (url.pathname === "/api/v1/models/set") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const body = await readJson(req);
       const model = typeof body?.model === "string" ? body.model.trim() : "";
       if (!model) {
@@ -245,9 +268,13 @@ export async function startGatewayAdminPipe(params: {
     }
 
     if (url.pathname === "/api/v1/models/allowlist") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const body = await readJson(req);
-      const models = Array.isArray(body?.models) ? body.models.filter((m) => typeof m === "string") : [];
+      const models = Array.isArray(body?.models)
+        ? body.models.filter((m) => typeof m === "string")
+        : [];
       if (models.length === 0) {
         return sendJson(res, 400, { ok: false, error: "models is required" });
       }
@@ -255,9 +282,11 @@ export async function startGatewayAdminPipe(params: {
       if (!snapshot.valid) {
         return sendJson(res, 400, { ok: false, error: "invalid config", issues: snapshot.issues });
       }
-      const nextModels = { ...(snapshot.config.agents?.defaults?.models || {}) };
+      const nextModels = { ...snapshot.config.agents?.defaults?.models };
       for (const key of models) {
-        if (!nextModels[key]) nextModels[key] = {};
+        if (!nextModels[key]) {
+          nextModels[key] = {};
+        }
       }
       const nextConfig = {
         ...snapshot.config,
@@ -274,7 +303,9 @@ export async function startGatewayAdminPipe(params: {
     }
 
     if (url.pathname === "/api/v1/reload") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const snapshot = await readConfigFileSnapshot();
       lastSnapshot = snapshot;
       if (!snapshot.valid) {
@@ -311,30 +342,63 @@ export async function startGatewayAdminPipe(params: {
     }
 
     if (url.pathname === "/api/v1/shim-test") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const result = await runCowsay();
       return sendJson(res, result.ok ? 200 : 500, result);
     }
 
     if (url.pathname === "/api/v1/oauth/qwen/start") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const { startQwenOAuth } = await import("./oauth-qwen.js");
       const result = await startQwenOAuth();
       return sendJson(res, 200, { ok: true, ...result });
     }
 
+    if (url.pathname === "/api/v1/oauth/github-copilot/start") {
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
+      const { startGitHubCopilotOAuth } = await import("./oauth-github-copilot.js");
+      const result = await startGitHubCopilotOAuth();
+      return sendJson(res, 200, { ok: true, ...result });
+    }
+
     if (url.pathname === "/api/v1/oauth/qwen/poll") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const body = await readJson(req);
       const state = typeof body?.state === "string" ? body.state.trim() : "";
-      if (!state) return sendJson(res, 400, { ok: false, error: "state required" });
+      if (!state) {
+        return sendJson(res, 400, { ok: false, error: "state required" });
+      }
       const { pollQwenOAuth } = await import("./oauth-qwen.js");
       const result = await pollQwenOAuth(state);
       return sendJson(res, 200, { ok: true, ...result });
     }
 
+    if (url.pathname === "/api/v1/oauth/github-copilot/poll") {
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
+      const body = await readJson(req);
+      const state = typeof body?.state === "string" ? body.state.trim() : "";
+      if (!state) {
+        return sendJson(res, 400, { ok: false, error: "state required" });
+      }
+      const { pollGitHubCopilotOAuth } = await import("./oauth-github-copilot.js");
+      const result = await pollGitHubCopilotOAuth(state);
+      return sendJson(res, 200, { ok: true, ...result });
+    }
+
     if (url.pathname === "/api/v1/oauth/minimax/start") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const body = await readJson(req);
       const region = typeof body?.region === "string" ? body.region.trim() : "global";
       const { startMiniMaxOAuth } = await import("./oauth-minimax.js");
@@ -343,17 +407,23 @@ export async function startGatewayAdminPipe(params: {
     }
 
     if (url.pathname === "/api/v1/oauth/minimax/poll") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const body = await readJson(req);
       const state = typeof body?.state === "string" ? body.state.trim() : "";
-      if (!state) return sendJson(res, 400, { ok: false, error: "state required" });
+      if (!state) {
+        return sendJson(res, 400, { ok: false, error: "state required" });
+      }
       const { pollMiniMaxOAuth } = await import("./oauth-minimax.js");
       const result = await pollMiniMaxOAuth(state);
       return sendJson(res, 200, { ok: true, ...result });
     }
 
     if (url.pathname === "/api/v1/oauth/gemini/start") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const { startGeminiOAuth } = await import("./oauth-gemini.js");
       try {
         const result = await startGeminiOAuth();
@@ -364,65 +434,87 @@ export async function startGatewayAdminPipe(params: {
     }
 
     if (url.pathname === "/api/v1/oauth/gemini/complete") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const body = await readJson(req);
       const state = typeof body?.state === "string" ? body.state.trim() : "";
       const callbackUrl = typeof body?.callbackUrl === "string" ? body.callbackUrl.trim() : "";
-      if (!state || !callbackUrl) return sendJson(res, 400, { ok: false, error: "state and callbackUrl required" });
+      if (!state || !callbackUrl) {
+        return sendJson(res, 400, { ok: false, error: "state and callbackUrl required" });
+      }
       const { completeGeminiOAuth } = await import("./oauth-gemini.js");
       const result = await completeGeminiOAuth(state, callbackUrl);
       return sendJson(res, 200, { ok: true, ...result });
     }
 
     if (url.pathname === "/api/v1/oauth/antigravity/start") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const { startAntigravityOAuth } = await import("./oauth-antigravity.js");
       const result = await startAntigravityOAuth();
       return sendJson(res, 200, { ok: true, ...result });
     }
 
     if (url.pathname === "/api/v1/oauth/antigravity/complete") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const body = await readJson(req);
       const state = typeof body?.state === "string" ? body.state.trim() : "";
       const callbackUrl = typeof body?.callbackUrl === "string" ? body.callbackUrl.trim() : "";
-      if (!state || !callbackUrl) return sendJson(res, 400, { ok: false, error: "state and callbackUrl required" });
+      if (!state || !callbackUrl) {
+        return sendJson(res, 400, { ok: false, error: "state and callbackUrl required" });
+      }
       const { completeAntigravityOAuth } = await import("./oauth-antigravity.js");
       const result = await completeAntigravityOAuth(state, callbackUrl);
       return sendJson(res, 200, { ok: true, ...result });
     }
 
     if (url.pathname === "/api/v1/oauth/openai/start") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const { startOpenAiOAuth } = await import("./oauth-openai.js");
       const result = await startOpenAiOAuth();
       return sendJson(res, 200, { ok: true, ...result });
     }
 
     if (url.pathname === "/api/v1/oauth/openai/complete") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const body = await readJson(req);
       const state = typeof body?.state === "string" ? body.state.trim() : "";
       const callbackUrl = typeof body?.callbackUrl === "string" ? body.callbackUrl.trim() : "";
-      if (!state || !callbackUrl) return sendJson(res, 400, { ok: false, error: "state and callbackUrl required" });
+      if (!state || !callbackUrl) {
+        return sendJson(res, 400, { ok: false, error: "state and callbackUrl required" });
+      }
       const { completeOpenAiOAuth } = await import("./oauth-openai.js");
       const result = await completeOpenAiOAuth(state, callbackUrl);
       return sendJson(res, 200, { ok: true, ...result });
     }
 
     if (url.pathname === "/api/v1/oauth/anthropic/complete") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const body = await readJson(req);
       const token = typeof body?.token === "string" ? body.token.trim() : "";
       const name = typeof body?.name === "string" ? body.name.trim() : "";
-      if (!token) return sendJson(res, 400, { ok: false, error: "token required" });
+      if (!token) {
+        return sendJson(res, 400, { ok: false, error: "token required" });
+      }
       const { completeAnthropicSetupToken } = await import("./oauth-anthropic.js");
       const result = await completeAnthropicSetupToken({ token, name });
       return sendJson(res, 200, { ok: true, ...result });
     }
 
     if (url.pathname === "/api/v1/pairing/list") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const body = await readJson(req);
       const { listChannelPairingRequests } = await import("../pairing/pairing-store.js");
       const { resolvePairingChannel } = await import("../channels/plugins/pairing.js");
@@ -436,12 +528,13 @@ export async function startGatewayAdminPipe(params: {
     }
 
     if (url.pathname === "/api/v1/pairing/approve") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const body = await readJson(req);
       const { approveChannelPairingCode } = await import("../pairing/pairing-store.js");
-      const { resolvePairingChannel, notifyPairingApproved } = await import(
-        "../channels/plugins/pairing.js"
-      );
+      const { resolvePairingChannel, notifyPairingApproved } =
+        await import("../channels/plugins/pairing.js");
       const { loadConfig } = await import("../config/config.js");
       try {
         const channel = resolvePairingChannel(body?.channel);
@@ -462,7 +555,9 @@ export async function startGatewayAdminPipe(params: {
     }
 
     if (url.pathname === "/api/v1/channels/list") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const body = await readJson(req);
       const { channelsListCommand } = await import("../commands/channels.js");
       try {
@@ -476,11 +571,14 @@ export async function startGatewayAdminPipe(params: {
     }
 
     if (url.pathname === "/api/v1/channels/catalog") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const { listChatChannels } = await import("../channels/registry.js");
       const { listChannelPlugins } = await import("../channels/plugins/index.js");
       const { listChannelPluginCatalogEntries } = await import("../channels/plugins/catalog.js");
-      const { resolveAgentWorkspaceDir, resolveDefaultAgentId } = await import("../agents/agent-scope.js");
+      const { resolveAgentWorkspaceDir, resolveDefaultAgentId } =
+        await import("../agents/agent-scope.js");
       const { loadConfig } = await import("../config/config.js");
       const coreEntries = listChatChannels();
       const installedEntries = listChannelPlugins();
@@ -523,7 +621,9 @@ export async function startGatewayAdminPipe(params: {
     }
 
     if (url.pathname === "/api/v1/channels/status") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const body = await readJson(req);
       const { channelsStatusCommand } = await import("../commands/channels.js");
       try {
@@ -544,7 +644,9 @@ export async function startGatewayAdminPipe(params: {
     }
 
     if (url.pathname === "/api/v1/channels/capabilities") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const body = await readJson(req);
       const { channelsCapabilitiesCommand } = await import("../commands/channels.js");
       try {
@@ -567,7 +669,9 @@ export async function startGatewayAdminPipe(params: {
     }
 
     if (url.pathname === "/api/v1/channels/resolve") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const body = await readJson(req);
       const { channelsResolveCommand } = await import("../commands/channels.js");
       try {
@@ -590,7 +694,9 @@ export async function startGatewayAdminPipe(params: {
     }
 
     if (url.pathname === "/api/v1/channels/logs") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const body = await readJson(req);
       const { channelsLogsCommand } = await import("../commands/channels.js");
       try {
@@ -611,13 +717,16 @@ export async function startGatewayAdminPipe(params: {
     }
 
     if (url.pathname === "/api/v1/channels/add") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const body = await readJson(req);
       const { channelsAddCommand } = await import("../commands/channels.js");
       const { listChatChannels } = await import("../channels/registry.js");
       const { listChannelPlugins } = await import("../channels/plugins/index.js");
       const { listChannelPluginCatalogEntries } = await import("../channels/plugins/catalog.js");
-      const { resolveAgentWorkspaceDir, resolveDefaultAgentId } = await import("../agents/agent-scope.js");
+      const { resolveAgentWorkspaceDir, resolveDefaultAgentId } =
+        await import("../agents/agent-scope.js");
       const { loadConfig } = await import("../config/config.js");
       const { loadOpenClawPlugins } = await import("../plugins/loader.js");
       const { discoverOpenClawPlugins } = await import("../plugins/discovery.js");
@@ -654,10 +763,13 @@ export async function startGatewayAdminPipe(params: {
       if (!installedChannels.includes(channelInput)) {
         const cfg = loadConfig();
         const workspaceDir = resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg));
-        const catalogChannels = listChannelPluginCatalogEntries({ workspaceDir }).map((entry: any) => entry.id);
+        const catalogChannels = listChannelPluginCatalogEntries({ workspaceDir }).map(
+          (entry: any) => entry.id,
+        );
         if (pluginDiscovery?.candidates?.includes(channelInput)) {
           const allow = Array.isArray(cfg.plugins?.allow) ? cfg.plugins?.allow : undefined;
-          const nextAllow = allow && !allow.includes(channelInput) ? [...allow, channelInput] : allow;
+          const nextAllow =
+            allow && !allow.includes(channelInput) ? [...allow, channelInput] : allow;
           const nextConfig = {
             ...cfg,
             plugins: {
@@ -667,7 +779,7 @@ export async function startGatewayAdminPipe(params: {
               entries: {
                 ...cfg.plugins?.entries,
                 [channelInput]: {
-                  ...(cfg.plugins?.entries?.[channelInput] ?? {}),
+                  ...cfg.plugins?.entries?.[channelInput],
                   enabled: true,
                 },
               },
@@ -693,7 +805,7 @@ export async function startGatewayAdminPipe(params: {
       let lastRuntimeError = "";
       try {
         await channelsAddCommand(
-          body as any,
+          body,
           {
             ...defaultRuntime,
             error: (...args) => {
@@ -718,11 +830,13 @@ export async function startGatewayAdminPipe(params: {
     }
 
     if (url.pathname === "/api/v1/channels/remove") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const body = await readJson(req);
       const { channelsRemoveCommand } = await import("../commands/channels.js");
       try {
-        const payload = { ...(body || {}), delete: body?.delete !== false };
+        const payload = { ...body, delete: body?.delete !== false };
         const channelInput = typeof payload?.channel === "string" ? payload.channel.trim() : "";
         const shouldPurgeAuth = payload?.purgeAuth !== false;
         if (channelInput === "whatsapp" && shouldPurgeAuth) {
@@ -745,8 +859,13 @@ export async function startGatewayAdminPipe(params: {
           }
         }
         await channelsRemoveCommand(
-          payload as any,
-          { ...defaultRuntime, exit: () => { throw new Error("runtime.exit"); } },
+          payload,
+          {
+            ...defaultRuntime,
+            exit: () => {
+              throw new Error("runtime.exit");
+            },
+          },
           { hasFlags: true },
         );
         return sendJson(res, 200, { ok: true, action: "channels.remove" });
@@ -756,13 +875,16 @@ export async function startGatewayAdminPipe(params: {
     }
 
     if (url.pathname === "/api/v1/channels/login") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const body = await readJson(req);
       const { runChannelLogin } = await import("../cli/channel-auth.js");
       const { listChatChannels } = await import("../channels/registry.js");
       const { listChannelPlugins } = await import("../channels/plugins/index.js");
       const { listChannelPluginCatalogEntries } = await import("../channels/plugins/catalog.js");
-      const { resolveAgentWorkspaceDir, resolveDefaultAgentId } = await import("../agents/agent-scope.js");
+      const { resolveAgentWorkspaceDir, resolveDefaultAgentId } =
+        await import("../agents/agent-scope.js");
       const { loadConfig } = await import("../config/config.js");
       const { loadOpenClawPlugins } = await import("../plugins/loader.js");
       const { discoverOpenClawPlugins } = await import("../plugins/discovery.js");
@@ -799,10 +921,13 @@ export async function startGatewayAdminPipe(params: {
       if (!installedChannels.includes(channelInput)) {
         const cfg = loadConfig();
         const workspaceDir = resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg));
-        const catalogChannels = listChannelPluginCatalogEntries({ workspaceDir }).map((entry: any) => entry.id);
+        const catalogChannels = listChannelPluginCatalogEntries({ workspaceDir }).map(
+          (entry: any) => entry.id,
+        );
         if (pluginDiscovery?.candidates?.includes(channelInput)) {
           const allow = Array.isArray(cfg.plugins?.allow) ? cfg.plugins?.allow : undefined;
-          const nextAllow = allow && !allow.includes(channelInput) ? [...allow, channelInput] : allow;
+          const nextAllow =
+            allow && !allow.includes(channelInput) ? [...allow, channelInput] : allow;
           const nextConfig = {
             ...cfg,
             plugins: {
@@ -812,7 +937,7 @@ export async function startGatewayAdminPipe(params: {
               entries: {
                 ...cfg.plugins?.entries,
                 [channelInput]: {
-                  ...(cfg.plugins?.entries?.[channelInput] ?? {}),
+                  ...cfg.plugins?.entries?.[channelInput],
                   enabled: true,
                 },
               },
@@ -836,7 +961,12 @@ export async function startGatewayAdminPipe(params: {
         }
       }
       try {
-        await runChannelLogin(body as any, { ...defaultRuntime, exit: () => { throw new Error("runtime.exit"); } });
+        await runChannelLogin(body, {
+          ...defaultRuntime,
+          exit: () => {
+            throw new Error("runtime.exit");
+          },
+        });
         return sendJson(res, 200, { ok: true, action: "channels.login" });
       } catch (err) {
         return sendJson(res, 400, { ok: false, error: String(err) });
@@ -844,7 +974,9 @@ export async function startGatewayAdminPipe(params: {
     }
 
     if (url.pathname === "/api/v1/channels/whatsapp/login/start") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const body = await readJson(req);
       const { startWebLoginWithQr } = await import("../web/login-qr.js");
       try {
@@ -867,7 +999,9 @@ export async function startGatewayAdminPipe(params: {
     }
 
     if (url.pathname === "/api/v1/channels/whatsapp/login/wait") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const body = await readJson(req);
       const { waitForWebLogin } = await import("../web/login-qr.js");
       try {
@@ -889,11 +1023,18 @@ export async function startGatewayAdminPipe(params: {
     }
 
     if (url.pathname === "/api/v1/channels/logout") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const body = await readJson(req);
       const { runChannelLogout } = await import("../cli/channel-auth.js");
       try {
-        await runChannelLogout(body as any, { ...defaultRuntime, exit: () => { throw new Error("runtime.exit"); } });
+        await runChannelLogout(body, {
+          ...defaultRuntime,
+          exit: () => {
+            throw new Error("runtime.exit");
+          },
+        });
         return sendJson(res, 200, { ok: true, action: "channels.logout" });
       } catch (err) {
         return sendJson(res, 400, { ok: false, error: String(err) });
@@ -901,15 +1042,23 @@ export async function startGatewayAdminPipe(params: {
     }
 
     if (url.pathname === "/api/v1/agent") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+      if (req.method !== "POST") {
+        return methodNotAllowed(res);
+      }
       const body = await readJson(req);
       const message = typeof body?.message === "string" ? body.message.trim() : "";
       const sessionKey = typeof body?.sessionKey === "string" ? body.sessionKey.trim() : "";
-      if (!message) return sendJson(res, 400, { ok: false, error: "message required" });
+      if (!message) {
+        return sendJson(res, 400, { ok: false, error: "message required" });
+      }
       try {
         const toolDefs = listToolDefinitions({ nodeRegistry: params.nodeRegistry });
         const lowered = message.toLowerCase();
-        const isToolsQuery = lowered.includes("tools") || lowered.includes("actions") || lowered.includes("可用") || lowered.includes("工具");
+        const isToolsQuery =
+          lowered.includes("tools") ||
+          lowered.includes("actions") ||
+          lowered.includes("可用") ||
+          lowered.includes("工具");
         if (isToolsQuery && toolDefs.length > 0) {
           return sendJson(res, 200, {
             ok: true,
@@ -956,7 +1105,9 @@ export async function startGatewayAdminPipe(params: {
       );
       if (process.platform !== "win32" && pipePath.startsWith("/")) {
         try {
-          if (fs.existsSync(pipePath)) fs.unlinkSync(pipePath);
+          if (fs.existsSync(pipePath)) {
+            fs.unlinkSync(pipePath);
+          }
         } catch {
           /* ignore */
         }
