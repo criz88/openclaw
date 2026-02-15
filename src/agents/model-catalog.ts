@@ -28,8 +28,59 @@ const defaultImportPiSdk = () => import("./pi-model-discovery.js");
 let importPiSdk = defaultImportPiSdk;
 
 const CODEX_PROVIDER = "openai-codex";
+const OPENAI_CODEX_GPT52_TEMPLATE_MODEL_ID = "gpt-5.2-codex";
 const OPENAI_CODEX_GPT53_MODEL_ID = "gpt-5.3-codex";
 const OPENAI_CODEX_GPT53_SPARK_MODEL_ID = "gpt-5.3-codex-spark";
+
+const ANTHROPIC_PROVIDER = "anthropic";
+const ANTHROPIC_OPUS_45_TEMPLATE_MODEL_ID = "claude-opus-4-5";
+const ANTHROPIC_OPUS_46_MODEL_ID = "claude-opus-4-6";
+
+function applyForwardCompatModelCatalogFallbacks(models: ModelCatalogEntry[]): void {
+  // Some model IDs are supported at runtime via forward-compat fallbacks (see model-forward-compat.ts)
+  // even if the upstream pi-ai model registry doesn't list them yet.
+  //
+  // Add these IDs to the catalog so UIs can surface them without hardcoding.
+
+  const hasCodex53 = models.some(
+    (entry) =>
+      entry.provider === CODEX_PROVIDER && entry.id.toLowerCase() === OPENAI_CODEX_GPT53_MODEL_ID,
+  );
+  if (!hasCodex53) {
+    const template = models.find(
+      (entry) =>
+        entry.provider === CODEX_PROVIDER &&
+        entry.id.toLowerCase() === OPENAI_CODEX_GPT52_TEMPLATE_MODEL_ID,
+    );
+    if (template) {
+      models.push({
+        ...template,
+        id: OPENAI_CODEX_GPT53_MODEL_ID,
+        name: "GPT-5.3 Codex",
+      });
+    }
+  }
+
+  const hasOpus46 = models.some(
+    (entry) =>
+      entry.provider === ANTHROPIC_PROVIDER &&
+      entry.id.toLowerCase() === ANTHROPIC_OPUS_46_MODEL_ID,
+  );
+  if (!hasOpus46) {
+    const template = models.find(
+      (entry) =>
+        entry.provider === ANTHROPIC_PROVIDER &&
+        entry.id.toLowerCase() === ANTHROPIC_OPUS_45_TEMPLATE_MODEL_ID,
+    );
+    if (template) {
+      models.push({
+        ...template,
+        id: ANTHROPIC_OPUS_46_MODEL_ID,
+        name: "Claude Opus 4.6",
+      });
+    }
+  }
+}
 
 function applyOpenAICodexSparkFallback(models: ModelCatalogEntry[]): void {
   const hasSpark = models.some(
@@ -126,6 +177,7 @@ export async function loadModelCatalog(params?: {
         const input = Array.isArray(entry?.input) ? entry.input : undefined;
         models.push({ id, name, provider, contextWindow, reasoning, input });
       }
+      applyForwardCompatModelCatalogFallbacks(models);
       applyOpenAICodexSparkFallback(models);
 
       if (models.length === 0) {
