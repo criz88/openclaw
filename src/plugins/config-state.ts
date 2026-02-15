@@ -13,7 +13,11 @@ export type NormalizedPluginsConfig = {
   entries: Record<string, { enabled?: boolean; config?: unknown }>;
 };
 
-export const BUNDLED_ENABLED_BY_DEFAULT = new Set<string>(["mcp-hub"]);
+export const BUNDLED_ENABLED_BY_DEFAULT = new Set<string>([
+  "device-pair",
+  "phone-control",
+  "talk-voice",
+]);
 
 const normalizeList = (value: unknown): string[] => {
   if (!Array.isArray(value)) {
@@ -161,7 +165,6 @@ export function resolveEnableState(
   id: string,
   origin: PluginRecord["origin"],
   config: NormalizedPluginsConfig,
-  kind?: PluginRecord["kind"],
 ): { enabled: boolean; reason?: string } {
   if (!config.enabled) {
     return { enabled: false, reason: "plugins disabled" };
@@ -181,9 +184,6 @@ export function resolveEnableState(
   }
   if (entry?.enabled === false) {
     return { enabled: false, reason: "disabled in config" };
-  }
-  if (origin === "bundled" && kind === "channel") {
-    return { enabled: true };
   }
   if (origin === "bundled" && BUNDLED_ENABLED_BY_DEFAULT.has(id)) {
     return { enabled: true };

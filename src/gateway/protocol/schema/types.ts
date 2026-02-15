@@ -10,6 +10,10 @@ import type {
 import type {
   AgentSummarySchema,
   AgentsFileEntrySchema,
+  AgentsCreateParamsSchema,
+  AgentsCreateResultSchema,
+  AgentsDeleteParamsSchema,
+  AgentsDeleteResultSchema,
   AgentsFilesGetParamsSchema,
   AgentsFilesGetResultSchema,
   AgentsFilesListParamsSchema,
@@ -18,44 +22,21 @@ import type {
   AgentsFilesSetResultSchema,
   AgentsListParamsSchema,
   AgentsListResultSchema,
+  AgentsUpdateParamsSchema,
+  AgentsUpdateResultSchema,
   ModelChoiceSchema,
   ModelsListParamsSchema,
-  ModelsTestParamsSchema,
-  ModelsTestResultSchema,
-  McpFieldErrorSchema,
-  McpProviderFieldValueSchema,
-  McpProviderStateSchema,
-  McpProvidersApplyParamsSchema,
-  McpProvidersApplyResultSchema,
-  McpProvidersSnapshotParamsSchema,
-  McpProvidersSnapshotResultSchema,
-  ToolDefinitionSchema,
-  ToolsCallParamsSchema,
-  ToolsCallResultSchema,
-  ToolsListParamsSchema,
-  ToolsListResultSchema,
   ModelsListResultSchema,
   SkillsBinsParamsSchema,
   SkillsBinsResultSchema,
   SkillsInstallParamsSchema,
   SkillsStatusParamsSchema,
-  SkillsListParamsSchema,
-  SkillsListResultSchema,
-  SkillsUninstallParamsSchema,
   SkillsUpdateParamsSchema,
-  SkillListItemSchema,
 } from "./agents-models-skills.js";
 import type {
   ChannelsLogoutParamsSchema,
-  ChannelsAddParamsSchema,
-  ChannelsRemoveParamsSchema,
-  ChannelsLoginParamsSchema,
-  ChannelsListParamsSchema,
-  ChannelsCapabilitiesParamsSchema,
-  ChannelsResolveParamsSchema,
-  ChannelsLogsParamsSchema,
-  PairingListParamsSchema,
-  PairingApproveParamsSchema,
+  TalkConfigParamsSchema,
+  TalkConfigResultSchema,
   ChannelsStatusParamsSchema,
   ChannelsStatusResultSchema,
   TalkModeParamsSchema,
@@ -137,12 +118,9 @@ import type {
   SessionsPreviewParamsSchema,
   SessionsResetParamsSchema,
   SessionsResolveParamsSchema,
+  SessionsUsageParamsSchema,
 } from "./sessions.js";
 import type { PresenceEntrySchema, SnapshotSchema, StateVersionSchema } from "./snapshot.js";
-import type {
-  OverviewSummaryParamsSchema,
-  OverviewSummaryResultSchema,
-} from "./overview.js";
 import type {
   WizardCancelParamsSchema,
   WizardNextParamsSchema,
@@ -188,6 +166,7 @@ export type SessionsPatchParams = Static<typeof SessionsPatchParamsSchema>;
 export type SessionsResetParams = Static<typeof SessionsResetParamsSchema>;
 export type SessionsDeleteParams = Static<typeof SessionsDeleteParamsSchema>;
 export type SessionsCompactParams = Static<typeof SessionsCompactParamsSchema>;
+export type SessionsUsageParams = Static<typeof SessionsUsageParamsSchema>;
 export type ConfigGetParams = Static<typeof ConfigGetParamsSchema>;
 export type ConfigSetParams = Static<typeof ConfigSetParamsSchema>;
 export type ConfigApplyParams = Static<typeof ConfigApplyParamsSchema>;
@@ -203,22 +182,21 @@ export type WizardNextResult = Static<typeof WizardNextResultSchema>;
 export type WizardStartResult = Static<typeof WizardStartResultSchema>;
 export type WizardStatusResult = Static<typeof WizardStatusResultSchema>;
 export type TalkModeParams = Static<typeof TalkModeParamsSchema>;
+export type TalkConfigParams = Static<typeof TalkConfigParamsSchema>;
+export type TalkConfigResult = Static<typeof TalkConfigResultSchema>;
 export type ChannelsStatusParams = Static<typeof ChannelsStatusParamsSchema>;
 export type ChannelsStatusResult = Static<typeof ChannelsStatusResultSchema>;
 export type ChannelsLogoutParams = Static<typeof ChannelsLogoutParamsSchema>;
-export type ChannelsAddParams = Static<typeof ChannelsAddParamsSchema>;
-export type ChannelsRemoveParams = Static<typeof ChannelsRemoveParamsSchema>;
-export type ChannelsLoginParams = Static<typeof ChannelsLoginParamsSchema>;
-export type ChannelsListParams = Static<typeof ChannelsListParamsSchema>;
-export type ChannelsCapabilitiesParams = Static<typeof ChannelsCapabilitiesParamsSchema>;
-export type ChannelsResolveParams = Static<typeof ChannelsResolveParamsSchema>;
-export type ChannelsLogsParams = Static<typeof ChannelsLogsParamsSchema>;
-export type PairingListParams = Static<typeof PairingListParamsSchema>;
-export type PairingApproveParams = Static<typeof PairingApproveParamsSchema>;
 export type WebLoginStartParams = Static<typeof WebLoginStartParamsSchema>;
 export type WebLoginWaitParams = Static<typeof WebLoginWaitParamsSchema>;
 export type AgentSummary = Static<typeof AgentSummarySchema>;
 export type AgentsFileEntry = Static<typeof AgentsFileEntrySchema>;
+export type AgentsCreateParams = Static<typeof AgentsCreateParamsSchema>;
+export type AgentsCreateResult = Static<typeof AgentsCreateResultSchema>;
+export type AgentsUpdateParams = Static<typeof AgentsUpdateParamsSchema>;
+export type AgentsUpdateResult = Static<typeof AgentsUpdateResultSchema>;
+export type AgentsDeleteParams = Static<typeof AgentsDeleteParamsSchema>;
+export type AgentsDeleteResult = Static<typeof AgentsDeleteResultSchema>;
 export type AgentsFilesListParams = Static<typeof AgentsFilesListParamsSchema>;
 export type AgentsFilesListResult = Static<typeof AgentsFilesListResultSchema>;
 export type AgentsFilesGetParams = Static<typeof AgentsFilesGetParamsSchema>;
@@ -227,33 +205,13 @@ export type AgentsFilesSetParams = Static<typeof AgentsFilesSetParamsSchema>;
 export type AgentsFilesSetResult = Static<typeof AgentsFilesSetResultSchema>;
 export type AgentsListParams = Static<typeof AgentsListParamsSchema>;
 export type AgentsListResult = Static<typeof AgentsListResultSchema>;
-export type OverviewSummaryParams = Static<typeof OverviewSummaryParamsSchema>;
-export type OverviewSummaryResult = Static<typeof OverviewSummaryResultSchema>;
 export type ModelChoice = Static<typeof ModelChoiceSchema>;
 export type ModelsListParams = Static<typeof ModelsListParamsSchema>;
-export type ModelsTestParams = Static<typeof ModelsTestParamsSchema>;
-export type ModelsTestResult = Static<typeof ModelsTestResultSchema>;
-export type ToolDefinition = Static<typeof ToolDefinitionSchema>;
-export type ToolsCallParams = Static<typeof ToolsCallParamsSchema>;
-export type ToolsCallResult = Static<typeof ToolsCallResultSchema>;
-export type ToolsListParams = Static<typeof ToolsListParamsSchema>;
-export type ToolsListResult = Static<typeof ToolsListResultSchema>;
-export type McpProviderFieldValue = Static<typeof McpProviderFieldValueSchema>;
-export type McpProviderState = Static<typeof McpProviderStateSchema>;
-export type McpProvidersSnapshotParams = Static<typeof McpProvidersSnapshotParamsSchema>;
-export type McpProvidersSnapshotResult = Static<typeof McpProvidersSnapshotResultSchema>;
-export type McpProvidersApplyParams = Static<typeof McpProvidersApplyParamsSchema>;
-export type McpFieldError = Static<typeof McpFieldErrorSchema>;
-export type McpProvidersApplyResult = Static<typeof McpProvidersApplyResultSchema>;
 export type ModelsListResult = Static<typeof ModelsListResultSchema>;
-export type SkillListItem = Static<typeof SkillListItemSchema>;
 export type SkillsStatusParams = Static<typeof SkillsStatusParamsSchema>;
-export type SkillsListParams = Static<typeof SkillsListParamsSchema>;
-export type SkillsListResult = Static<typeof SkillsListResultSchema>;
 export type SkillsBinsParams = Static<typeof SkillsBinsParamsSchema>;
 export type SkillsBinsResult = Static<typeof SkillsBinsResultSchema>;
 export type SkillsInstallParams = Static<typeof SkillsInstallParamsSchema>;
-export type SkillsUninstallParams = Static<typeof SkillsUninstallParamsSchema>;
 export type SkillsUpdateParams = Static<typeof SkillsUpdateParamsSchema>;
 export type CronJob = Static<typeof CronJobSchema>;
 export type CronListParams = Static<typeof CronListParamsSchema>;

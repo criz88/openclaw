@@ -89,6 +89,12 @@ describe("listSkillCommandsForAgents", () => {
             { id: "research", workspace: researchWorkspace },
           ],
         },
+        skills: {
+          entries: {
+            "demo-skill": { enabled: true },
+            "extra-skill": { enabled: true },
+          },
+        },
       },
     });
     const names = commands.map((entry) => entry.name);

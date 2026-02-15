@@ -1,4 +1,5 @@
 import AjvPkg, { type ErrorObject } from "ajv";
+import type { SessionsPatchResult } from "../session-utils.types.js";
 import {
   type AgentEvent,
   AgentEventSchema,
@@ -11,6 +12,18 @@ import {
   AgentSummarySchema,
   type AgentsFileEntry,
   AgentsFileEntrySchema,
+  type AgentsCreateParams,
+  AgentsCreateParamsSchema,
+  type AgentsCreateResult,
+  AgentsCreateResultSchema,
+  type AgentsUpdateParams,
+  AgentsUpdateParamsSchema,
+  type AgentsUpdateResult,
+  AgentsUpdateResultSchema,
+  type AgentsDeleteParams,
+  AgentsDeleteParamsSchema,
+  type AgentsDeleteResult,
+  AgentsDeleteResultSchema,
   type AgentsFilesGetParams,
   AgentsFilesGetParamsSchema,
   type AgentsFilesGetResult,
@@ -27,32 +40,14 @@ import {
   AgentsListParamsSchema,
   type AgentsListResult,
   AgentsListResultSchema,
-  type OverviewSummaryParams,
-  OverviewSummaryParamsSchema,
-  type OverviewSummaryResult,
-  OverviewSummaryResultSchema,
   type AgentWaitParams,
   AgentWaitParamsSchema,
   type ChannelsLogoutParams,
   ChannelsLogoutParamsSchema,
-  type ChannelsAddParams,
-  ChannelsAddParamsSchema,
-  type ChannelsRemoveParams,
-  ChannelsRemoveParamsSchema,
-  type ChannelsLoginParams,
-  ChannelsLoginParamsSchema,
-  type ChannelsListParams,
-  ChannelsListParamsSchema,
-  type ChannelsCapabilitiesParams,
-  ChannelsCapabilitiesParamsSchema,
-  type ChannelsResolveParams,
-  ChannelsResolveParamsSchema,
-  type ChannelsLogsParams,
-  ChannelsLogsParamsSchema,
-  type PairingListParams,
-  PairingListParamsSchema,
-  type PairingApproveParams,
-  PairingApproveParamsSchema,
+  type TalkConfigParams,
+  TalkConfigParamsSchema,
+  type TalkConfigResult,
+  TalkConfigResultSchema,
   type ChannelsStatusParams,
   ChannelsStatusParamsSchema,
   type ChannelsStatusResult,
@@ -135,28 +130,6 @@ import {
   LogsTailResultSchema,
   type ModelsListParams,
   ModelsListParamsSchema,
-  type McpFieldError,
-  type McpProviderFieldValue,
-  type McpProviderState,
-  type McpProvidersApplyParams,
-  McpProvidersApplyParamsSchema,
-  type McpProvidersApplyResult,
-  type McpProvidersSnapshotParams,
-  McpProvidersSnapshotParamsSchema,
-  type McpProvidersSnapshotResult,
-  type ToolDefinition,
-  type ModelsTestParams,
-  ModelsTestParamsSchema,
-  type ModelsTestResult,
-  ModelsTestResultSchema,
-  type ToolsListParams,
-  ToolsListParamsSchema,
-  type ToolsCallParams,
-  ToolsCallParamsSchema,
-  type ToolsCallResult,
-  ToolsCallResultSchema,
-  type ToolsListResult,
-  ToolsListResultSchema,
   type NodeDescribeParams,
   NodeDescribeParamsSchema,
   type NodeEventParams,
@@ -204,22 +177,17 @@ import {
   SessionsResetParamsSchema,
   type SessionsResolveParams,
   SessionsResolveParamsSchema,
+  type SessionsUsageParams,
+  SessionsUsageParamsSchema,
   type ShutdownEvent,
   ShutdownEventSchema,
   type SkillsBinsParams,
   SkillsBinsParamsSchema,
   type SkillsBinsResult,
-  SkillsBinsResultSchema,
   type SkillsInstallParams,
   SkillsInstallParamsSchema,
   type SkillsStatusParams,
   SkillsStatusParamsSchema,
-  type SkillsListParams,
-  SkillsListParamsSchema,
-  type SkillsListResult,
-  SkillsListResultSchema,
-  type SkillsUninstallParams,
-  SkillsUninstallParamsSchema,
   type SkillsUpdateParams,
   SkillsUpdateParamsSchema,
   type Snapshot,
@@ -274,6 +242,9 @@ export const validateAgentIdentityParams =
 export const validateAgentWaitParams = ajv.compile<AgentWaitParams>(AgentWaitParamsSchema);
 export const validateWakeParams = ajv.compile<WakeParams>(WakeParamsSchema);
 export const validateAgentsListParams = ajv.compile<AgentsListParams>(AgentsListParamsSchema);
+export const validateAgentsCreateParams = ajv.compile<AgentsCreateParams>(AgentsCreateParamsSchema);
+export const validateAgentsUpdateParams = ajv.compile<AgentsUpdateParams>(AgentsUpdateParamsSchema);
+export const validateAgentsDeleteParams = ajv.compile<AgentsDeleteParams>(AgentsDeleteParamsSchema);
 export const validateAgentsFilesListParams = ajv.compile<AgentsFilesListParams>(
   AgentsFilesListParamsSchema,
 );
@@ -321,6 +292,8 @@ export const validateSessionsDeleteParams = ajv.compile<SessionsDeleteParams>(
 export const validateSessionsCompactParams = ajv.compile<SessionsCompactParams>(
   SessionsCompactParamsSchema,
 );
+export const validateSessionsUsageParams =
+  ajv.compile<SessionsUsageParams>(SessionsUsageParamsSchema);
 export const validateConfigGetParams = ajv.compile<ConfigGetParams>(ConfigGetParamsSchema);
 export const validateConfigSetParams = ajv.compile<ConfigSetParams>(ConfigSetParamsSchema);
 export const validateConfigApplyParams = ajv.compile<ConfigApplyParams>(ConfigApplyParamsSchema);
@@ -331,60 +304,18 @@ export const validateWizardNextParams = ajv.compile<WizardNextParams>(WizardNext
 export const validateWizardCancelParams = ajv.compile<WizardCancelParams>(WizardCancelParamsSchema);
 export const validateWizardStatusParams = ajv.compile<WizardStatusParams>(WizardStatusParamsSchema);
 export const validateTalkModeParams = ajv.compile<TalkModeParams>(TalkModeParamsSchema);
+export const validateTalkConfigParams = ajv.compile<TalkConfigParams>(TalkConfigParamsSchema);
 export const validateChannelsStatusParams = ajv.compile<ChannelsStatusParams>(
   ChannelsStatusParamsSchema,
 );
 export const validateChannelsLogoutParams = ajv.compile<ChannelsLogoutParams>(
   ChannelsLogoutParamsSchema,
 );
-export const validateChannelsAddParams = ajv.compile<ChannelsAddParams>(
-  ChannelsAddParamsSchema,
-);
-export const validateChannelsRemoveParams = ajv.compile<ChannelsRemoveParams>(
-  ChannelsRemoveParamsSchema,
-);
-export const validateChannelsLoginParams = ajv.compile<ChannelsLoginParams>(
-  ChannelsLoginParamsSchema,
-);
-export const validateChannelsListParams = ajv.compile<ChannelsListParams>(
-  ChannelsListParamsSchema,
-);
-export const validateChannelsCapabilitiesParams = ajv.compile<ChannelsCapabilitiesParams>(
-  ChannelsCapabilitiesParamsSchema,
-);
-export const validateChannelsResolveParams = ajv.compile<ChannelsResolveParams>(
-  ChannelsResolveParamsSchema,
-);
-export const validateChannelsLogsParams = ajv.compile<ChannelsLogsParams>(
-  ChannelsLogsParamsSchema,
-);
-export const validatePairingListParams = ajv.compile<PairingListParams>(
-  PairingListParamsSchema,
-);
-export const validatePairingApproveParams = ajv.compile<PairingApproveParams>(
-  PairingApproveParamsSchema,
-);
-export const validateOverviewSummaryParams = ajv.compile<OverviewSummaryParams>(
-  OverviewSummaryParamsSchema,
-);
 export const validateModelsListParams = ajv.compile<ModelsListParams>(ModelsListParamsSchema);
-export const validateModelsTestParams = ajv.compile<ModelsTestParams>(ModelsTestParamsSchema);
-export const validateToolsListParams = ajv.compile<ToolsListParams>(ToolsListParamsSchema);
-export const validateToolsCallParams = ajv.compile<ToolsCallParams>(ToolsCallParamsSchema);
-export const validateMcpProvidersSnapshotParams = ajv.compile<McpProvidersSnapshotParams>(
-  McpProvidersSnapshotParamsSchema,
-);
-export const validateMcpProvidersApplyParams = ajv.compile<McpProvidersApplyParams>(
-  McpProvidersApplyParamsSchema,
-);
 export const validateSkillsStatusParams = ajv.compile<SkillsStatusParams>(SkillsStatusParamsSchema);
-export const validateSkillsListParams = ajv.compile<SkillsListParams>(SkillsListParamsSchema);
 export const validateSkillsBinsParams = ajv.compile<SkillsBinsParams>(SkillsBinsParamsSchema);
 export const validateSkillsInstallParams =
   ajv.compile<SkillsInstallParams>(SkillsInstallParamsSchema);
-export const validateSkillsUninstallParams = ajv.compile<SkillsUninstallParams>(
-  SkillsUninstallParamsSchema,
-);
 export const validateSkillsUpdateParams = ajv.compile<SkillsUpdateParams>(SkillsUpdateParamsSchema);
 export const validateCronListParams = ajv.compile<CronListParams>(CronListParamsSchema);
 export const validateCronStatusParams = ajv.compile<CronStatusParams>(CronStatusParamsSchema);
@@ -505,6 +436,7 @@ export {
   SessionsResetParamsSchema,
   SessionsDeleteParamsSchema,
   SessionsCompactParamsSchema,
+  SessionsUsageParamsSchema,
   ConfigGetParamsSchema,
   ConfigSetParamsSchema,
   ConfigApplyParamsSchema,
@@ -519,22 +451,21 @@ export {
   WizardNextResultSchema,
   WizardStartResultSchema,
   WizardStatusResultSchema,
+  TalkConfigParamsSchema,
+  TalkConfigResultSchema,
   ChannelsStatusParamsSchema,
   ChannelsStatusResultSchema,
   ChannelsLogoutParamsSchema,
-  ChannelsAddParamsSchema,
-  ChannelsRemoveParamsSchema,
-  ChannelsLoginParamsSchema,
-  ChannelsListParamsSchema,
-  ChannelsCapabilitiesParamsSchema,
-  ChannelsResolveParamsSchema,
-  ChannelsLogsParamsSchema,
-  PairingListParamsSchema,
-  PairingApproveParamsSchema,
   WebLoginStartParamsSchema,
   WebLoginWaitParamsSchema,
   AgentSummarySchema,
   AgentsFileEntrySchema,
+  AgentsCreateParamsSchema,
+  AgentsCreateResultSchema,
+  AgentsUpdateParamsSchema,
+  AgentsUpdateResultSchema,
+  AgentsDeleteParamsSchema,
+  AgentsDeleteResultSchema,
   AgentsFilesListParamsSchema,
   AgentsFilesListResultSchema,
   AgentsFilesGetParamsSchema,
@@ -543,24 +474,9 @@ export {
   AgentsFilesSetResultSchema,
   AgentsListParamsSchema,
   AgentsListResultSchema,
-  OverviewSummaryParamsSchema,
-  OverviewSummaryResultSchema,
   ModelsListParamsSchema,
-  ModelsTestParamsSchema,
-  ModelsTestResultSchema,
-  ToolsListParamsSchema,
-  ToolsCallParamsSchema,
-  ToolsCallResultSchema,
-  ToolsListResultSchema,
-  McpProvidersSnapshotParamsSchema,
-  McpProvidersApplyParamsSchema,
   SkillsStatusParamsSchema,
-  SkillsListParamsSchema,
-  SkillsListResultSchema,
-  SkillsBinsParamsSchema,
-  SkillsBinsResultSchema,
   SkillsInstallParamsSchema,
-  SkillsUninstallParamsSchema,
   SkillsUpdateParamsSchema,
   CronJobSchema,
   CronListParamsSchema,
@@ -623,23 +539,22 @@ export type {
   WizardNextResult,
   WizardStartResult,
   WizardStatusResult,
+  TalkConfigParams,
+  TalkConfigResult,
   TalkModeParams,
   ChannelsStatusParams,
   ChannelsStatusResult,
   ChannelsLogoutParams,
-  ChannelsAddParams,
-  ChannelsRemoveParams,
-  ChannelsLoginParams,
-  ChannelsListParams,
-  ChannelsCapabilitiesParams,
-  ChannelsResolveParams,
-  ChannelsLogsParams,
-  PairingListParams,
-  PairingApproveParams,
   WebLoginStartParams,
   WebLoginWaitParams,
   AgentSummary,
   AgentsFileEntry,
+  AgentsCreateParams,
+  AgentsCreateResult,
+  AgentsUpdateParams,
+  AgentsUpdateResult,
+  AgentsDeleteParams,
+  AgentsDeleteResult,
   AgentsFilesListParams,
   AgentsFilesListResult,
   AgentsFilesGetParams,
@@ -648,30 +563,10 @@ export type {
   AgentsFilesSetResult,
   AgentsListParams,
   AgentsListResult,
-  OverviewSummaryParams,
-  OverviewSummaryResult,
-  ModelsListParams,
-  ModelsTestParams,
-  ModelsTestResult,
-  ToolDefinition,
-  ToolsCallParams,
-  ToolsCallResult,
-  ToolsListParams,
-  ToolsListResult,
-  McpProviderFieldValue,
-  McpProviderState,
-  McpProvidersSnapshotParams,
-  McpProvidersSnapshotResult,
-  McpProvidersApplyParams,
-  McpFieldError,
-  McpProvidersApplyResult,
   SkillsStatusParams,
-  SkillsListParams,
-  SkillsListResult,
   SkillsBinsParams,
   SkillsBinsResult,
   SkillsInstallParams,
-  SkillsUninstallParams,
   SkillsUpdateParams,
   NodePairRejectParams,
   NodePairVerifyParams,
@@ -683,9 +578,11 @@ export type {
   SessionsPreviewParams,
   SessionsResolveParams,
   SessionsPatchParams,
+  SessionsPatchResult,
   SessionsResetParams,
   SessionsDeleteParams,
   SessionsCompactParams,
+  SessionsUsageParams,
   CronJob,
   CronListParams,
   CronStatusParams,

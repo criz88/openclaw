@@ -93,7 +93,6 @@ export function createChatRunRegistry(): ChatRunRegistry {
 export type ChatRunState = {
   registry: ChatRunRegistry;
   buffers: Map<string, string>;
-  mediaUrls: Map<string, string[]>;
   deltaSentAt: Map<string, number>;
   abortedRuns: Map<string, number>;
   clear: () => void;
@@ -102,14 +101,12 @@ export type ChatRunState = {
 export function createChatRunState(): ChatRunState {
   const registry = createChatRunRegistry();
   const buffers = new Map<string, string>();
-  const mediaUrls = new Map<string, string[]>();
   const deltaSentAt = new Map<string, number>();
   const abortedRuns = new Map<string, number>();
 
   const clear = () => {
     registry.clear();
     buffers.clear();
-    mediaUrls.clear();
     deltaSentAt.clear();
     abortedRuns.clear();
   };
@@ -117,11 +114,83 @@ export function createChatRunState(): ChatRunState {
   return {
     registry,
     buffers,
-    mediaUrls,
     deltaSentAt,
     abortedRuns,
     clear,
   };
+}
+
+export type ToolEventRecipientRegistry = {
+  add: (runId: string, connId: string) => void;
+  get: (runId: string) => ReadonlySet<string> | undefined;
+  markFinal: (runId: string) => void;
+};
+
+type ToolRecipientEntry = {
+  connIds: Set<string>;
+  updatedAt: number;
+  finalizedAt?: number;
+};
+
+const TOOL_EVENT_RECIPIENT_TTL_MS = 10 * 60 * 1000;
+const TOOL_EVENT_RECIPIENT_FINAL_GRACE_MS = 30 * 1000;
+
+export function createToolEventRecipientRegistry(): ToolEventRecipientRegistry {
+  const recipients = new Map<string, ToolRecipientEntry>();
+
+  const prune = () => {
+    if (recipients.size === 0) {
+      return;
+    }
+    const now = Date.now();
+    for (const [runId, entry] of recipients) {
+      const cutoff = entry.finalizedAt
+        ? entry.finalizedAt + TOOL_EVENT_RECIPIENT_FINAL_GRACE_MS
+        : entry.updatedAt + TOOL_EVENT_RECIPIENT_TTL_MS;
+      if (now >= cutoff) {
+        recipients.delete(runId);
+      }
+    }
+  };
+
+  const add = (runId: string, connId: string) => {
+    if (!runId || !connId) {
+      return;
+    }
+    const now = Date.now();
+    const existing = recipients.get(runId);
+    if (existing) {
+      existing.connIds.add(connId);
+      existing.updatedAt = now;
+    } else {
+      recipients.set(runId, {
+        connIds: new Set([connId]),
+        updatedAt: now,
+      });
+    }
+    prune();
+  };
+
+  const get = (runId: string) => {
+    const entry = recipients.get(runId);
+    if (!entry) {
+      return undefined;
+    }
+    entry.updatedAt = Date.now();
+    prune();
+    return entry.connIds;
+  };
+
+  const markFinal = (runId: string) => {
+    const entry = recipients.get(runId);
+    if (!entry) {
+      return;
+    }
+    entry.finalizedAt = Date.now();
+    prune();
+  };
+
+  return { add, get, markFinal };
 }
 
 export type ChatEventBroadcast = (
@@ -134,80 +203,30 @@ export type NodeSendToSession = (sessionKey: string, event: string, payload: unk
 
 export type AgentEventHandlerOptions = {
   broadcast: ChatEventBroadcast;
+  broadcastToConnIds: (
+    event: string,
+    payload: unknown,
+    connIds: ReadonlySet<string>,
+    opts?: { dropIfSlow?: boolean },
+  ) => void;
   nodeSendToSession: NodeSendToSession;
   agentRunSeq: Map<string, number>;
   chatRunState: ChatRunState;
   resolveSessionKeyForRun: (runId: string) => string | undefined;
   clearAgentRunContext: (runId: string) => void;
+  toolEventRecipients: ToolEventRecipientRegistry;
 };
 
 export function createAgentEventHandler({
   broadcast,
+  broadcastToConnIds,
   nodeSendToSession,
   agentRunSeq,
   chatRunState,
   resolveSessionKeyForRun,
   clearAgentRunContext,
+  toolEventRecipients,
 }: AgentEventHandlerOptions) {
-  const mergeMediaUrls = (runId: string, urls: string[]) => {
-    if (!urls.length) return;
-    const prev = chatRunState.mediaUrls.get(runId) ?? [];
-    const deduped = new Set(prev);
-    for (const url of urls) {
-      const trimmed = url.trim();
-      if (trimmed) deduped.add(trimmed);
-    }
-    chatRunState.mediaUrls.set(runId, [...deduped]);
-  };
-
-  const readAssistantMediaUrls = (evt: AgentEventPayload): string[] => {
-    const data = evt.data as Record<string, unknown> | undefined;
-    const urls: string[] = [];
-    const rawMedia = data?.mediaUrls;
-    if (Array.isArray(rawMedia)) {
-      for (const entry of rawMedia) {
-        if (typeof entry === "string" && entry.trim()) {
-          urls.push(entry.trim());
-        }
-      }
-    }
-    const rawImages = data?.images;
-    if (Array.isArray(rawImages)) {
-      for (const entry of rawImages) {
-        if (typeof entry === "string" && entry.trim()) {
-          urls.push(entry.trim());
-          continue;
-        }
-        if (entry && typeof entry === "object") {
-          const rec = entry as Record<string, unknown>;
-          if (typeof rec.url === "string" && rec.url.trim()) urls.push(rec.url.trim());
-          if (typeof rec.imageUrl === "string" && rec.imageUrl.trim()) {
-            urls.push(rec.imageUrl.trim());
-          }
-        }
-      }
-    }
-    return urls;
-  };
-
-  const buildAssistantMessage = (text: string, mediaUrls: string[]) => {
-    const content: Array<Record<string, unknown>> = [];
-    if (text) {
-      content.push({ type: "text", text });
-    }
-    for (const url of mediaUrls) {
-      content.push({ type: "image", url });
-    }
-    if (content.length === 0) {
-      return undefined;
-    }
-    return {
-      role: "assistant",
-      content,
-      timestamp: Date.now(),
-    };
-  };
-
   const emitChatDelta = (sessionKey: string, clientRunId: string, seq: number, text: string) => {
     chatRunState.buffers.set(clientRunId, text);
     const now = Date.now();
@@ -242,9 +261,7 @@ export function createAgentEventHandler({
     error?: unknown,
   ) => {
     const text = chatRunState.buffers.get(clientRunId)?.trim() ?? "";
-    const mediaUrls = chatRunState.mediaUrls.get(clientRunId) ?? [];
     chatRunState.buffers.delete(clientRunId);
-    chatRunState.mediaUrls.delete(clientRunId);
     chatRunState.deltaSentAt.delete(clientRunId);
     if (jobState === "done") {
       const payload = {
@@ -252,7 +269,13 @@ export function createAgentEventHandler({
         sessionKey,
         seq,
         state: "final" as const,
-        message: buildAssistantMessage(text, mediaUrls),
+        message: text
+          ? {
+              role: "assistant",
+              content: [{ type: "text", text }],
+              timestamp: Date.now(),
+            }
+          : undefined,
       };
       // Suppress webchat broadcast for heartbeat runs when showOk is false
       if (!shouldSuppressHeartbeatBroadcast(clientRunId)) {
@@ -272,25 +295,25 @@ export function createAgentEventHandler({
     nodeSendToSession(sessionKey, "chat", payload);
   };
 
-  const shouldEmitToolEvents = (runId: string, sessionKey?: string) => {
+  const resolveToolVerboseLevel = (runId: string, sessionKey?: string) => {
     const runContext = getAgentRunContext(runId);
     const runVerbose = normalizeVerboseLevel(runContext?.verboseLevel);
     if (runVerbose) {
-      return runVerbose === "on";
+      return runVerbose;
     }
     if (!sessionKey) {
-      return false;
+      return "off";
     }
     try {
       const { cfg, entry } = loadSessionEntry(sessionKey);
       const sessionVerbose = normalizeVerboseLevel(entry?.verboseLevel);
       if (sessionVerbose) {
-        return sessionVerbose === "on";
+        return sessionVerbose;
       }
       const defaultVerbose = normalizeVerboseLevel(cfg.agents?.defaults?.verboseDefault);
-      return defaultVerbose === "on";
+      return defaultVerbose ?? "off";
     } catch {
-      return false;
+      return "off";
     }
   };
 
@@ -303,10 +326,18 @@ export function createAgentEventHandler({
     // Include sessionKey so Control UI can filter tool streams per session.
     const agentPayload = sessionKey ? { ...evt, sessionKey } : evt;
     const last = agentRunSeq.get(evt.runId) ?? 0;
-    if (evt.stream === "tool" && !shouldEmitToolEvents(evt.runId, sessionKey)) {
-      agentRunSeq.set(evt.runId, evt.seq);
-      return;
-    }
+    const isToolEvent = evt.stream === "tool";
+    const toolVerbose = isToolEvent ? resolveToolVerboseLevel(evt.runId, sessionKey) : "off";
+    // Build tool payload: strip result/partialResult unless verbose=full
+    const toolPayload =
+      isToolEvent && toolVerbose !== "full"
+        ? (() => {
+            const data = evt.data ? { ...evt.data } : {};
+            delete data.result;
+            delete data.partialResult;
+            return sessionKey ? { ...evt, sessionKey, data } : { ...evt, data };
+          })()
+        : agentPayload;
     if (evt.seq !== last + 1) {
       broadcast("agent", {
         runId: evt.runId,
@@ -321,15 +352,27 @@ export function createAgentEventHandler({
       });
     }
     agentRunSeq.set(evt.runId, evt.seq);
-    broadcast("agent", agentPayload);
+    if (isToolEvent) {
+      // Always broadcast tool events to registered WS recipients with
+      // tool-events capability, regardless of verboseLevel. The verbose
+      // setting only controls whether tool details are sent as channel
+      // messages to messaging surfaces (Telegram, Discord, etc.).
+      const recipients = toolEventRecipients.get(evt.runId);
+      if (recipients && recipients.size > 0) {
+        broadcastToConnIds("agent", toolPayload, recipients);
+      }
+    } else {
+      broadcast("agent", agentPayload);
+    }
 
     const lifecyclePhase =
       evt.stream === "lifecycle" && typeof evt.data?.phase === "string" ? evt.data.phase : null;
 
     if (sessionKey) {
-      nodeSendToSession(sessionKey, "agent", agentPayload);
-      if (!isAborted && evt.stream === "assistant") {
-        mergeMediaUrls(clientRunId, readAssistantMediaUrls(evt));
+      // Send tool events to node/channel subscribers only when verbose is enabled;
+      // WS clients already received the event above via broadcastToConnIds.
+      if (!isToolEvent || toolVerbose !== "off") {
+        nodeSendToSession(sessionKey, "agent", isToolEvent ? toolPayload : agentPayload);
       }
       if (!isAborted && evt.stream === "assistant" && typeof evt.data?.text === "string") {
         emitChatDelta(sessionKey, clientRunId, evt.seq, evt.data.text);
@@ -360,7 +403,6 @@ export function createAgentEventHandler({
         chatRunState.abortedRuns.delete(clientRunId);
         chatRunState.abortedRuns.delete(evt.runId);
         chatRunState.buffers.delete(clientRunId);
-        chatRunState.mediaUrls.delete(clientRunId);
         chatRunState.deltaSentAt.delete(clientRunId);
         if (chatLink) {
           chatRunState.registry.remove(evt.runId, clientRunId, sessionKey);
@@ -369,6 +411,7 @@ export function createAgentEventHandler({
     }
 
     if (lifecyclePhase === "end" || lifecyclePhase === "error") {
+      toolEventRecipients.markFinal(evt.runId);
       clearAgentRunContext(evt.runId);
     }
   };

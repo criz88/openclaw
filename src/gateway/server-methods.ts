@@ -35,7 +35,11 @@ const WRITE_SCOPE = "operator.write";
 const APPROVALS_SCOPE = "operator.approvals";
 const PAIRING_SCOPE = "operator.pairing";
 
-const APPROVAL_METHODS = new Set(["exec.approval.request", "exec.approval.resolve"]);
+const APPROVAL_METHODS = new Set([
+  "exec.approval.request",
+  "exec.approval.waitDecision",
+  "exec.approval.resolve",
+]);
 const NODE_ROLE_METHODS = new Set([
   "node.invoke.result",
   "node.event",
@@ -189,6 +193,9 @@ function authorizeGatewayMethod(method: string, client: GatewayRequestOptions["c
     method.startsWith("wizard.") ||
     method.startsWith("update.") ||
     method === "channels.logout" ||
+    method === "agents.create" ||
+    method === "agents.update" ||
+    method === "agents.delete" ||
     method === "skills.install" ||
     method === "skills.update" ||
     method === "skills.uninstall" ||

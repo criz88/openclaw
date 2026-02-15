@@ -497,35 +497,6 @@ export const channelsHandlers: GatewayRequestHandlers = {
       respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, String(err)));
     }
   },
-  "channels.logout": async ({ params, respond, context }) => {
-    if (!validateChannelsLogoutParams(params)) {
-      respond(
-        false,
-        undefined,
-        errorShape(ErrorCodes.INVALID_REQUEST, "invalid channels.logout params"),
-      );
-      return;
-    }
-    const channelId = normalizeChannelId((params as any).channel);
-    if (!channelId) {
-      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "invalid channel"));
-      return;
-    }
-    const plugin = getChannelPlugin(channelId);
-    if (!plugin) {
-      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "unknown channel"));
-      return;
-    }
-    const cfg = loadConfig();
-    const result = await logoutChannelAccount({
-      channelId,
-      accountId: (params as any).accountId,
-      cfg,
-      context,
-      plugin,
-    });
-    respond(true, { ok: true, action: "channels.logout", ...result }, undefined);
-  },
   "channels.status": async ({ params, respond, context }) => {
     if (!validateChannelsStatusParams(params)) {
       respond(

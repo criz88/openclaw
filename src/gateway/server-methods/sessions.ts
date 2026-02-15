@@ -1,21 +1,19 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
-import path from "node:path";
 import type { GatewayRequestHandlers } from "./types.js";
+import { resolveDefaultAgentId } from "../../agents/agent-scope.js";
 import { abortEmbeddedPiRun, waitForEmbeddedPiRunEnd } from "../../agents/pi-embedded.js";
 import { stopSubagentsForRequester } from "../../auto-reply/reply/abort.js";
 import { clearSessionQueues } from "../../auto-reply/reply/queue.js";
 import { loadConfig } from "../../config/config.js";
 import {
   loadSessionStore,
-  saveSessionStore,
   snapshotSessionOrigin,
   resolveMainSessionKey,
   type SessionEntry,
   updateSessionStore,
 } from "../../config/sessions.js";
-import { resolveStateDir } from "../../config/paths.js";
-import { listDevicePairing } from "../../infra/device-pairing.js";
+import { normalizeAgentId, parseAgentSessionKey } from "../../routing/session-key.js";
 import {
   ErrorCodes,
   errorShape,
@@ -30,11 +28,14 @@ import {
 } from "../protocol/index.js";
 import {
   archiveFileOnDisk,
+  archiveSessionTranscripts,
   listSessionsFromStore,
   loadCombinedSessionStoreForGateway,
   loadSessionEntry,
+  pruneLegacyStoreKeys,
   readSessionPreviewItemsFromTranscript,
   resolveGatewaySessionStoreTarget,
+  resolveSessionModelRef,
   resolveSessionTranscriptCandidates,
   type SessionsPatchResult,
   type SessionsPreviewEntry,
@@ -43,118 +44,52 @@ import {
 import { applySessionsPatchToStore } from "../sessions-patch.js";
 import { resolveSessionKeyFromResolveParams } from "../sessions-resolve.js";
 
-const NODE_KEY_SUFFIX_RE = /^(.*:)?(desktop-node-|desktop-|node-)([^:]+)$/;
-let lastNodeSessionMigrationSignature = "";
-
-const slugifySessionSuffix = (value: string) =>
-  value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 48);
-
-const mergeSessionEntries = (
-  target: SessionEntry | undefined,
-  source: SessionEntry,
-): SessionEntry => {
-  if (!target) return source;
-  const targetUpdatedAt =
-    typeof target.updatedAt === "number" && Number.isFinite(target.updatedAt) ? target.updatedAt : 0;
-  const sourceUpdatedAt =
-    typeof source.updatedAt === "number" && Number.isFinite(source.updatedAt) ? source.updatedAt : 0;
-  return {
-    ...source,
-    ...target,
-    updatedAt: Math.max(targetUpdatedAt, sourceUpdatedAt) || undefined,
-  };
-};
-
-function buildNodeNameMap(context: { nodeRegistry: { listConnected: () => Array<{ nodeId: string; displayName?: string }> } }, paired: Array<{ deviceId: string; displayName?: string }>) {
-  const map = new Map<string, string>();
-  for (const n of context.nodeRegistry.listConnected()) {
-    const name = (n.displayName ?? "").trim();
-    if (n.nodeId.trim() && name) {
-      map.set(n.nodeId.trim(), name);
-    }
-  }
-  for (const p of paired) {
-    const id = p.deviceId.trim();
-    const name = (p.displayName ?? "").trim();
-    if (id && name && !map.has(id)) {
-      map.set(id, name);
-    }
-  }
-  return map;
-}
-
-function migrateStoreDesktopNodeKeys(
-  store: Record<string, SessionEntry>,
-  nodeNameById: Map<string, string>,
-): boolean {
-  let changed = false;
-  for (const sourceKey of Object.keys(store)) {
-    const match = sourceKey.match(NODE_KEY_SUFFIX_RE);
-    if (!match) continue;
-    const sourcePrefix = match[1] ?? "";
-    const marker = match[2];
-    const suffix = (match[3] ?? "").trim();
-    if (!suffix) continue;
-    const nodeName = nodeNameById.get(suffix);
-    if (!nodeName) continue;
-    const nameSlug = slugifySessionSuffix(nodeName);
-    if (!nameSlug) continue;
-    const targetKey = `${sourcePrefix}${marker}${nameSlug}`;
-    if (targetKey === sourceKey) continue;
-    const sourceEntry = store[sourceKey];
-    if (!sourceEntry) continue;
-    store[targetKey] = mergeSessionEntries(store[targetKey], sourceEntry);
-    delete store[sourceKey];
-    changed = true;
-  }
-  return changed;
-}
-
-async function migrateDesktopNodeSessionKeys(params: {
-  context: { nodeRegistry: { listConnected: () => Array<{ nodeId: string; displayName?: string }> } };
+function migrateAndPruneSessionStoreKey(params: {
+  cfg: ReturnType<typeof loadConfig>;
+  key: string;
+  store: Record<string, SessionEntry>;
 }) {
-  const pairing = await listDevicePairing().catch(() => null);
-  const paired = (pairing?.paired ?? []).map((entry) => ({
-    deviceId: String(entry.deviceId ?? "").trim(),
-    displayName: typeof entry.displayName === "string" ? entry.displayName : undefined,
-  }));
-  const nodeNameById = buildNodeNameMap(params.context, paired);
-  if (nodeNameById.size === 0) return;
-  const signature = [...nodeNameById.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([id, name]) => `${id}:${name}`)
-    .join("|");
-  if (signature && signature === lastNodeSessionMigrationSignature) return;
-
-  const agentsRoot = path.join(resolveStateDir(), "agents");
-  let agentDirs: string[] = [];
-  try {
-    agentDirs = fs
-      .readdirSync(agentsRoot, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name);
-  } catch {
-    return;
+  const target = resolveGatewaySessionStoreTarget({
+    cfg: params.cfg,
+    key: params.key,
+    store: params.store,
+  });
+  const primaryKey = target.canonicalKey;
+  if (!params.store[primaryKey]) {
+    const existingKey = target.storeKeys.find((candidate) => Boolean(params.store[candidate]));
+    if (existingKey) {
+      params.store[primaryKey] = params.store[existingKey];
+    }
   }
+  pruneLegacyStoreKeys({
+    store: params.store,
+    canonicalKey: primaryKey,
+    candidates: target.storeKeys,
+  });
+  return { target, primaryKey, entry: params.store[primaryKey] };
+}
 
-  for (const agentId of agentDirs) {
-    const storePath = path.join(agentsRoot, agentId, "sessions", "sessions.json");
-    if (!fs.existsSync(storePath)) continue;
-    const store = loadSessionStore(storePath);
-    const changed = migrateStoreDesktopNodeKeys(store, nodeNameById);
-    if (!changed) continue;
-    await saveSessionStore(storePath, store);
+function archiveSessionTranscriptsForSession(params: {
+  sessionId: string | undefined;
+  storePath: string;
+  sessionFile?: string;
+  agentId?: string;
+  reason: "reset" | "deleted";
+}): string[] {
+  if (!params.sessionId) {
+    return [];
   }
-  lastNodeSessionMigrationSignature = signature;
+  return archiveSessionTranscripts({
+    sessionId: params.sessionId,
+    storePath: params.storePath,
+    sessionFile: params.sessionFile,
+    agentId: params.agentId,
+    reason: params.reason,
+  });
 }
 
 export const sessionsHandlers: GatewayRequestHandlers = {
-  "sessions.list": async ({ params, respond, context }) => {
+  "sessions.list": ({ params, respond }) => {
     if (!validateSessionsListParams(params)) {
       respond(
         false,
@@ -168,7 +103,6 @@ export const sessionsHandlers: GatewayRequestHandlers = {
     }
     const p = params;
     const cfg = loadConfig();
-    await migrateDesktopNodeSessionKeys({ context });
     const { storePath, store } = loadCombinedSessionStoreForGateway(cfg);
     const result = listSessionsFromStore({
       cfg,
@@ -216,12 +150,16 @@ export const sessionsHandlers: GatewayRequestHandlers = {
 
     for (const key of keys) {
       try {
-        const target = resolveGatewaySessionStoreTarget({ cfg, key });
-        const store = storeCache.get(target.storePath) ?? loadSessionStore(target.storePath);
-        storeCache.set(target.storePath, store);
-        const entry =
-          target.storeKeys.map((candidate) => store[candidate]).find(Boolean) ??
-          store[target.canonicalKey];
+        const storeTarget = resolveGatewaySessionStoreTarget({ cfg, key, scanLegacyKeys: false });
+        const store =
+          storeCache.get(storeTarget.storePath) ?? loadSessionStore(storeTarget.storePath);
+        storeCache.set(storeTarget.storePath, store);
+        const target = resolveGatewaySessionStoreTarget({
+          cfg,
+          key,
+          store,
+        });
+        const entry = target.storeKeys.map((candidate) => store[candidate]).find(Boolean);
         if (!entry?.sessionId) {
           previews.push({ key, status: "missing", items: [] });
           continue;
@@ -246,7 +184,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
 
     respond(true, { ts: Date.now(), previews } satisfies SessionsPreviewResult, undefined);
   },
-  "sessions.resolve": ({ params, respond }) => {
+  "sessions.resolve": async ({ params, respond }) => {
     if (!validateSessionsResolveParams(params)) {
       respond(
         false,
@@ -261,7 +199,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
     const p = params;
     const cfg = loadConfig();
 
-    const resolved = resolveSessionKeyFromResolveParams({ cfg, p });
+    const resolved = await resolveSessionKeyFromResolveParams({ cfg, p });
     if (!resolved.ok) {
       respond(false, undefined, resolved.error);
       return;
@@ -291,12 +229,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
     const target = resolveGatewaySessionStoreTarget({ cfg, key });
     const storePath = target.storePath;
     const applied = await updateSessionStore(storePath, async (store) => {
-      const primaryKey = target.storeKeys[0] ?? key;
-      const existingKey = target.storeKeys.find((candidate) => store[candidate]);
-      if (existingKey && existingKey !== primaryKey && !store[primaryKey]) {
-        store[primaryKey] = store[existingKey];
-        delete store[existingKey];
-      }
+      const { primaryKey } = migrateAndPruneSessionStoreKey({ cfg, key, store });
       return await applySessionsPatchToStore({
         cfg,
         store,
@@ -309,11 +242,18 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       respond(false, undefined, applied.error);
       return;
     }
+    const parsed = parseAgentSessionKey(target.canonicalKey ?? key);
+    const agentId = normalizeAgentId(parsed?.agentId ?? resolveDefaultAgentId(cfg));
+    const resolved = resolveSessionModelRef(cfg, applied.entry, agentId);
     const result: SessionsPatchResult = {
       ok: true,
       path: storePath,
       key: target.canonicalKey,
       entry: applied.entry,
+      resolved: {
+        modelProvider: resolved.provider,
+        model: resolved.model,
+      },
     };
     respond(true, result, undefined);
   },
@@ -339,14 +279,13 @@ export const sessionsHandlers: GatewayRequestHandlers = {
     const cfg = loadConfig();
     const target = resolveGatewaySessionStoreTarget({ cfg, key });
     const storePath = target.storePath;
+    let oldSessionId: string | undefined;
+    let oldSessionFile: string | undefined;
     const next = await updateSessionStore(storePath, (store) => {
-      const primaryKey = target.storeKeys[0] ?? key;
-      const existingKey = target.storeKeys.find((candidate) => store[candidate]);
-      if (existingKey && existingKey !== primaryKey && !store[primaryKey]) {
-        store[primaryKey] = store[existingKey];
-        delete store[existingKey];
-      }
+      const { primaryKey } = migrateAndPruneSessionStoreKey({ cfg, key, store });
       const entry = store[primaryKey];
+      oldSessionId = entry?.sessionId;
+      oldSessionFile = entry?.sessionFile;
       const now = Date.now();
       const nextEntry: SessionEntry = {
         sessionId: randomUUID(),
@@ -369,9 +308,18 @@ export const sessionsHandlers: GatewayRequestHandlers = {
         inputTokens: 0,
         outputTokens: 0,
         totalTokens: 0,
+        totalTokensFresh: true,
       };
       store[primaryKey] = nextEntry;
       return nextEntry;
+    });
+    // Archive old transcript so it doesn't accumulate on disk (#14869).
+    archiveSessionTranscriptsForSession({
+      sessionId: oldSessionId,
+      storePath,
+      sessionFile: oldSessionFile,
+      agentId: target.agentId,
+      reason: "reset",
     });
     respond(true, { ok: true, key: target.canonicalKey, entry: next }, undefined);
   },
@@ -435,35 +383,21 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       }
     }
     await updateSessionStore(storePath, (store) => {
-      const primaryKey = target.storeKeys[0] ?? key;
-      const existingKey = target.storeKeys.find((candidate) => store[candidate]);
-      if (existingKey && existingKey !== primaryKey && !store[primaryKey]) {
-        store[primaryKey] = store[existingKey];
-        delete store[existingKey];
-      }
+      const { primaryKey } = migrateAndPruneSessionStoreKey({ cfg, key, store });
       if (store[primaryKey]) {
         delete store[primaryKey];
       }
     });
 
-    const archived: string[] = [];
-    if (deleteTranscript && sessionId) {
-      for (const candidate of resolveSessionTranscriptCandidates(
-        sessionId,
-        storePath,
-        entry?.sessionFile,
-        target.agentId,
-      )) {
-        if (!fs.existsSync(candidate)) {
-          continue;
-        }
-        try {
-          archived.push(archiveFileOnDisk(candidate, "deleted"));
-        } catch {
-          // Best-effort.
-        }
-      }
-    }
+    const archived = deleteTranscript
+      ? archiveSessionTranscriptsForSession({
+          sessionId,
+          storePath,
+          sessionFile: entry?.sessionFile,
+          agentId: target.agentId,
+          reason: "deleted",
+        })
+      : [];
 
     respond(true, { ok: true, key: target.canonicalKey, deleted: existed, archived }, undefined);
   },
@@ -496,13 +430,8 @@ export const sessionsHandlers: GatewayRequestHandlers = {
     const storePath = target.storePath;
     // Lock + read in a short critical section; transcript work happens outside.
     const compactTarget = await updateSessionStore(storePath, (store) => {
-      const primaryKey = target.storeKeys[0] ?? key;
-      const existingKey = target.storeKeys.find((candidate) => store[candidate]);
-      if (existingKey && existingKey !== primaryKey && !store[primaryKey]) {
-        store[primaryKey] = store[existingKey];
-        delete store[existingKey];
-      }
-      return { entry: store[primaryKey], primaryKey };
+      const { entry, primaryKey } = migrateAndPruneSessionStoreKey({ cfg, key, store });
+      return { entry, primaryKey };
     });
     const entry = compactTarget.entry;
     const sessionId = entry?.sessionId;
@@ -569,6 +498,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       delete entryToUpdate.inputTokens;
       delete entryToUpdate.outputTokens;
       delete entryToUpdate.totalTokens;
+      delete entryToUpdate.totalTokensFresh;
       entryToUpdate.updatedAt = Date.now();
     });
 

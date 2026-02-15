@@ -20,9 +20,6 @@ import { deleteSecret, getSecret, hasSecret, setSecret } from "../../mcp/secret-
 import {
   ErrorCodes,
   errorShape,
-  formatValidationErrors,
-  validateMcpProvidersApplyParams,
-  validateMcpProvidersSnapshotParams,
 } from "../protocol/index.js";
 import { listToolDefinitions } from "./tools.js";
 
@@ -70,6 +67,16 @@ function asString(value: unknown): string {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function validateMcpProvidersSnapshotParamsLite(params: unknown): boolean {
+  return isPlainObject(params ?? {});
+}
+
+function validateMcpProvidersApplyParamsLite(params: unknown): boolean {
+  if (!isPlainObject(params)) return false;
+  const providers = (params as any).providers;
+  return Array.isArray(providers);
 }
 
 function sanitizeStringArray(input: unknown): string[] | undefined {
@@ -1135,13 +1142,13 @@ export const mcpHandlers: GatewayRequestHandlers = {
   },
 
   "mcp.providers.snapshot": async ({ params, respond, context }) => {
-    if (!validateMcpProvidersSnapshotParams(params)) {
+    if (!validateMcpProvidersSnapshotParamsLite(params)) {
       respond(
         false,
         undefined,
         errorShape(
           ErrorCodes.INVALID_REQUEST,
-          `invalid mcp.providers.snapshot params: ${formatValidationErrors(validateMcpProvidersSnapshotParams.errors)}`,
+          "invalid mcp.providers.snapshot params",
         ),
       );
       return;
@@ -1170,13 +1177,13 @@ export const mcpHandlers: GatewayRequestHandlers = {
   },
 
   "mcp.providers.apply": async ({ params, respond, context }) => {
-    if (!validateMcpProvidersApplyParams(params)) {
+    if (!validateMcpProvidersApplyParamsLite(params)) {
       respond(
         false,
         undefined,
         errorShape(
           ErrorCodes.INVALID_REQUEST,
-          `invalid mcp.providers.apply params: ${formatValidationErrors(validateMcpProvidersApplyParams.errors)}`,
+          "invalid mcp.providers.apply params",
         ),
       );
       return;

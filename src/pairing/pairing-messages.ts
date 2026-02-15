@@ -1,11 +1,12 @@
 import type { PairingChannel } from "./pairing-store.js";
+import { formatCliCommand } from "../cli/command-format.js";
 
 export function buildPairingReply(params: {
   channel: PairingChannel;
   idLine: string;
   code: string;
 }): string {
-  const { idLine, code } = params;
+  const { channel, idLine, code } = params;
   return [
     "OpenClaw: access not configured.",
     "",
@@ -13,8 +14,7 @@ export function buildPairingReply(params: {
     "",
     `Pairing code: ${code}`,
     "",
-    "Ask the bot owner to approve in OpenClaw App:",
-    "A Pairing Request popup appears automatically on top of any page.",
-    "If it was ignored: Open OpenClaw Desktop -> Channels -> Pending List -> enter this Pairing code.",
+    "Ask the bot owner to approve with:",
+    formatCliCommand(`openclaw pairing approve ${channel} ${code}`),
   ].join("\n");
 }
