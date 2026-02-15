@@ -15,13 +15,13 @@ import { logsHandlers } from "./server-methods/logs.js";
 import { mcpHandlers } from "./server-methods/mcp.js";
 import { modelsHandlers } from "./server-methods/models.js";
 import { nodeHandlers } from "./server-methods/nodes.js";
+import { oauthHandlers } from "./server-methods/oauth.js";
 import { sendHandlers } from "./server-methods/send.js";
 import { sessionsHandlers } from "./server-methods/sessions.js";
 import { skillsHandlers } from "./server-methods/skills.js";
 import { systemHandlers } from "./server-methods/system.js";
-import { toolsHandlers } from "./server-methods/tools.js";
-import { oauthHandlers } from "./server-methods/oauth.js";
 import { talkHandlers } from "./server-methods/talk.js";
+import { toolsHandlers } from "./server-methods/tools.js";
 import { ttsHandlers } from "./server-methods/tts.js";
 import { updateHandlers } from "./server-methods/update.js";
 import { usageHandlers } from "./server-methods/usage.js";
@@ -81,6 +81,7 @@ const READ_METHODS = new Set([
   "models.list",
   "models.test",
   "tools.list",
+  "mcp.presets.list",
   "mcp.providers.snapshot",
   "oauth.qwen.start",
   "oauth.qwen.poll",

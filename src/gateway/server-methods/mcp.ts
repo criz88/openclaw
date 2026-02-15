@@ -1,3 +1,4 @@
+import type { GatewayRequestHandlers } from "./types.js";
 import {
   readConfigFileSnapshot,
   resolveConfigSnapshotHash,
@@ -22,7 +23,6 @@ import {
   validateMcpProvidersApplyParams,
   validateMcpProvidersSnapshotParams,
 } from "../protocol/index.js";
-import type { GatewayRequestHandlers } from "./types.js";
 import { listToolDefinitions } from "./tools.js";
 
 type McpFieldError = {
@@ -31,8 +31,126 @@ type McpFieldError = {
   message: string;
 };
 
+type McpPresetFieldOption = { value: string; label: string };
+
+type McpPresetField = {
+  key: string;
+  label: string;
+  description?: string;
+  type: "text" | "number" | "boolean" | "select";
+  required?: boolean;
+  secret?: boolean;
+  placeholder?: string;
+  options?: McpPresetFieldOption[];
+  defaultValue?: string | number | boolean | null;
+};
+
+type McpPresetRow = {
+  presetId: string;
+  providerId: string;
+  label: string;
+  description?: string;
+  iconKey?: string;
+  implementationSource?: "official" | "trusted-substitute";
+  statusHints?: string[];
+  requiredSecrets?: string[];
+  website?: string;
+  docsUrl?: string;
+  aliases?: string[];
+  fields: McpPresetField[];
+};
+
 function asString(value: unknown): string {
   return String(value || "").trim();
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function sanitizeStringArray(input: unknown): string[] | undefined {
+  if (!Array.isArray(input)) return undefined;
+  const out = input.map((item) => asString(item)).filter(Boolean);
+  return out.length > 0 ? out : undefined;
+}
+
+function labelFromKey(key: string): string {
+  const normalized = asString(key);
+  if (!normalized) return "";
+  const lower = normalized.toLowerCase();
+  if (lower === "apikey") return "API Key";
+  if (lower === "authtoken") return "Auth Token";
+  if (lower === "token") return "Token";
+  return normalized
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/^./, (char) => char.toUpperCase());
+}
+
+function sanitizePresetField(raw: unknown): McpPresetField | null {
+  if (!isPlainObject(raw)) return null;
+  const key = asString(raw.key);
+  const label = asString(raw.label) || labelFromKey(key);
+  const typeRaw = asString(raw.type).toLowerCase();
+  const type: McpPresetField["type"] =
+    typeRaw === "select" || typeRaw === "boolean" || typeRaw === "number"
+      ? (typeRaw as any)
+      : "text";
+
+  const optionsRaw = Array.isArray(raw.options) ? (raw.options as unknown[]) : [];
+  const options: McpPresetFieldOption[] = [];
+  if (type === "select") {
+    for (const item of optionsRaw) {
+      if (!isPlainObject(item)) continue;
+      const value = asString(item.value);
+      const optLabel = asString(item.label);
+      if (!value || !optLabel) continue;
+      options.push({ value, label: optLabel });
+    }
+  }
+
+  const description = asString(raw.description);
+  const placeholder = asString(raw.placeholder);
+  const defaultValue = raw.defaultValue as any;
+
+  return {
+    key,
+    label,
+    ...(description ? { description } : {}),
+    type,
+    ...(raw.required === true ? { required: true } : {}),
+    ...(raw.secret === true ? { secret: true } : {}),
+    ...(placeholder ? { placeholder } : {}),
+    ...(options.length > 0 ? { options } : {}),
+    ...(raw.defaultValue !== undefined ? { defaultValue } : {}),
+  };
+}
+
+function inferPresetId(providerId: string, presetId: string): string {
+  const explicit = asString(presetId);
+  if (explicit) return explicit;
+  const normalized = asString(providerId);
+  if (!normalized) return "";
+  if (normalized.toLowerCase().startsWith("mcp:")) {
+    return normalized.slice(4);
+  }
+  return normalized;
+}
+
+function buildPresetFieldsFromSecrets(requiredSecrets: string[] | undefined): McpPresetField[] {
+  const keys = Array.isArray(requiredSecrets) ? requiredSecrets.map(asString).filter(Boolean) : [];
+  const fields: McpPresetField[] = [];
+  for (const key of keys) {
+    fields.push({
+      key,
+      label: labelFromKey(key),
+      type: "text",
+      required: true,
+      secret: true,
+      placeholder: "",
+    });
+  }
+  return fields;
 }
 
 function resolveBaseHash(params: Record<string, unknown>): string | null {
@@ -129,7 +247,10 @@ function isProviderConfigured(entry: McpProviderConfigEntry): boolean {
     if (!key) continue;
     const direct = asString(secrets[key]);
     if (direct) continue;
-    if (isAuthSecretAlias(key) && (asString(secrets.token) || asString(secrets.apiKey) || asString(secrets.authToken))) {
+    if (
+      isAuthSecretAlias(key) &&
+      (asString(secrets.token) || asString(secrets.apiKey) || asString(secrets.authToken))
+    ) {
       continue;
     }
     return false;
@@ -198,7 +319,9 @@ function buildSnapshotPayload(params: {
     };
   });
 
-  rows.sort((a, b) => String(a.label || a.providerId || "").localeCompare(String(b.label || b.providerId || "")));
+  rows.sort((a, b) =>
+    String(a.label || a.providerId || "").localeCompare(String(b.label || b.providerId || "")),
+  );
 
   return {
     ok: true,
@@ -278,6 +401,91 @@ function applySecretValues(params: {
 }
 
 export const mcpHandlers: GatewayRequestHandlers = {
+  "mcp.presets.list": async ({ respond }) => {
+    const snapshot = await readConfigFileSnapshot();
+    if (!snapshot.valid) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "invalid config; fix before reading MCP presets"),
+      );
+      return;
+    }
+
+    const entry = snapshot.config.plugins?.entries?.["mcp-hub"];
+    const rawConfig = isPlainObject(entry?.config)
+      ? (entry?.config as Record<string, unknown>)
+      : {};
+    const builtinProviders = isPlainObject(rawConfig.builtinProviders)
+      ? rawConfig.builtinProviders
+      : null;
+    const providers = isPlainObject(rawConfig.providers) ? rawConfig.providers : null;
+    const sourceMap =
+      builtinProviders && Object.keys(builtinProviders).length > 0
+        ? (builtinProviders as Record<string, unknown>)
+        : providers && Object.keys(providers).length > 0
+          ? (providers as Record<string, unknown>)
+          : {};
+
+    const presets: McpPresetRow[] = [];
+    for (const [providerIdRaw, rawValue] of Object.entries(sourceMap)) {
+      const providerId = normalizeMcpProviderId(asString(providerIdRaw));
+      if (!providerId) continue;
+      if (!isPlainObject(rawValue)) continue;
+
+      const presetId = inferPresetId(providerId, asString(rawValue.presetId));
+      const label = asString(rawValue.label) || presetId || providerId;
+      if (!presetId || !label) continue;
+
+      const requiredSecrets = sanitizeStringArray(rawValue.requiredSecrets);
+      const statusHints = sanitizeStringArray(rawValue.statusHints);
+      const aliases = sanitizeStringArray(rawValue.aliases);
+      const fieldsRaw = Array.isArray(rawValue.fields) ? (rawValue.fields as unknown[]) : null;
+      const fields: McpPresetField[] = [];
+      if (fieldsRaw) {
+        for (const item of fieldsRaw) {
+          const field = sanitizePresetField(item);
+          if (!field?.key || !field?.label) continue;
+          fields.push(field);
+        }
+      }
+      if (fields.length === 0) {
+        fields.push(...buildPresetFieldsFromSecrets(requiredSecrets));
+      }
+
+      const implementationRaw = asString(rawValue.implementationSource).toLowerCase();
+      const implementationSource: McpPresetRow["implementationSource"] =
+        implementationRaw === "trusted-substitute"
+          ? "trusted-substitute"
+          : implementationRaw === "official"
+            ? "official"
+            : "official";
+
+      const description = asString(rawValue.description);
+      const iconKey = asString(rawValue.iconKey) || presetId;
+      const website = asString(rawValue.website);
+      const docsUrl = asString(rawValue.docsUrl);
+
+      presets.push({
+        presetId,
+        providerId,
+        label,
+        ...(description ? { description } : {}),
+        ...(iconKey ? { iconKey } : {}),
+        ...(implementationSource ? { implementationSource } : {}),
+        ...(statusHints ? { statusHints } : {}),
+        ...(requiredSecrets ? { requiredSecrets } : {}),
+        ...(website ? { website } : {}),
+        ...(docsUrl ? { docsUrl } : {}),
+        ...(aliases ? { aliases } : {}),
+        fields,
+      });
+    }
+
+    presets.sort((a, b) => String(a.label || "").localeCompare(String(b.label || "")));
+    respond(true, { ok: true, presets }, undefined);
+  },
+
   "mcp.providers.snapshot": async ({ params, respond, context }) => {
     if (!validateMcpProvidersSnapshotParams(params)) {
       respond(
@@ -341,14 +549,20 @@ export const mcpHandlers: GatewayRequestHandlers = {
 
     const hub = readMcpHubConfig(snapshot.config);
     const nextProviders: Record<string, McpProviderConfigEntry> = { ...hub.providers };
-    const inputProviders = Array.isArray((params as any).providers) ? ((params as any).providers as any[]) : [];
+    const inputProviders = Array.isArray((params as any).providers)
+      ? ((params as any).providers as any[])
+      : [];
 
     const fieldErrors: McpFieldError[] = [];
 
     for (const rawProvider of inputProviders) {
       const providerId = normalizeMcpProviderId(asString(rawProvider?.providerId));
       if (!providerId) {
-        fieldErrors.push({ providerId: "", field: "providerId", message: "providerId is required" });
+        fieldErrors.push({
+          providerId: "",
+          field: "providerId",
+          message: "providerId is required",
+        });
         continue;
       }
 
@@ -369,10 +583,18 @@ export const mcpHandlers: GatewayRequestHandlers = {
         ...(previous || { enabled: true }),
         enabled: rawProvider?.enabled !== false,
         label: asString(rawProvider?.label) || previous?.label || providerId,
-        ...(sanitizeFieldValues(rawProvider?.fields) ? { fields: sanitizeFieldValues(rawProvider?.fields) } : {}),
-        ...(sanitizeConnection(rawProvider?.connection) ? { connection: sanitizeConnection(rawProvider?.connection) } : {}),
-        ...(Array.isArray(rawProvider?.requiredSecrets) ? { requiredSecrets: rawProvider.requiredSecrets.map(asString).filter(Boolean) } : {}),
-        ...(Array.isArray(rawProvider?.statusHints) ? { statusHints: rawProvider.statusHints.map(asString).filter(Boolean) } : {}),
+        ...(sanitizeFieldValues(rawProvider?.fields)
+          ? { fields: sanitizeFieldValues(rawProvider?.fields) }
+          : {}),
+        ...(sanitizeConnection(rawProvider?.connection)
+          ? { connection: sanitizeConnection(rawProvider?.connection) }
+          : {}),
+        ...(Array.isArray(rawProvider?.requiredSecrets)
+          ? { requiredSecrets: rawProvider.requiredSecrets.map(asString).filter(Boolean) }
+          : {}),
+        ...(Array.isArray(rawProvider?.statusHints)
+          ? { statusHints: rawProvider.statusHints.map(asString).filter(Boolean) }
+          : {}),
         updatedAt: new Date().toISOString(),
         ...(previous?.installedAt ? {} : { installedAt: new Date().toISOString() }),
       };
@@ -381,7 +603,9 @@ export const mcpHandlers: GatewayRequestHandlers = {
         providerId,
         existingSecretRefs: { ...(previous?.secretRefs || {}) },
         secretValues:
-          rawProvider?.secretValues && typeof rawProvider.secretValues === "object" && !Array.isArray(rawProvider.secretValues)
+          rawProvider?.secretValues &&
+          typeof rawProvider.secretValues === "object" &&
+          !Array.isArray(rawProvider.secretValues)
             ? (rawProvider.secretValues as Record<string, unknown>)
             : undefined,
       });
@@ -404,7 +628,8 @@ export const mcpHandlers: GatewayRequestHandlers = {
           const tools = await discoverMcpHttpTools({
             provider: nextEntry,
             secrets,
-            timeoutMs: typeof rawProvider?.timeoutMs === "number" ? rawProvider.timeoutMs : undefined,
+            timeoutMs:
+              typeof rawProvider?.timeoutMs === "number" ? rawProvider.timeoutMs : undefined,
           });
           nextEntry.tools = tools;
         } catch (error) {
@@ -460,4 +685,3 @@ export const mcpHandlers: GatewayRequestHandlers = {
     );
   },
 };
-
