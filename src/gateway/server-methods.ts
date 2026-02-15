@@ -83,6 +83,8 @@ const READ_METHODS = new Set([
   "tools.list",
   "mcp.presets.list",
   "mcp.providers.snapshot",
+  "mcp.market.search",
+  "mcp.market.detail",
   "oauth.qwen.start",
   "oauth.qwen.poll",
   "oauth.minimax.start",

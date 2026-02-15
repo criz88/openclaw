@@ -4,6 +4,7 @@ import {
   resolveConfigSnapshotHash,
   writeConfigFile,
 } from "../../config/config.js";
+import { fetchWithSsrFGuard } from "../../infra/net/fetch-guard.js";
 import { scheduleGatewaySigusr1Restart } from "../../infra/restart.js";
 import {
   buildMcpSecretRef,
@@ -59,6 +60,8 @@ type McpPresetRow = {
   aliases?: string[];
   fields: McpPresetField[];
 };
+
+const DEFAULT_MCP_MARKET_REGISTRY_BASE_URL = "https://registry.smithery.ai";
 
 function asString(value: unknown): string {
   return String(value || "").trim();
@@ -151,6 +154,62 @@ function buildPresetFieldsFromSecrets(requiredSecrets: string[] | undefined): Mc
     });
   }
   return fields;
+}
+
+function encodeQualifiedNamePath(qualifiedName: string): string {
+  const normalized = asString(qualifiedName);
+  if (!normalized) return "";
+  // qualifiedName can contain slashes ("namespace/slug"); encode segments but preserve path structure.
+  return normalized
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+}
+
+function resolveRegistryBaseUrl(params: Record<string, unknown>): string {
+  const raw = asString(params.registryBaseUrl);
+  return raw || DEFAULT_MCP_MARKET_REGISTRY_BASE_URL;
+}
+
+function coercePositiveInt(input: unknown, fallback: number): number {
+  if (typeof input !== "number" || !Number.isFinite(input)) return fallback;
+  const coerced = Math.floor(input);
+  return coerced > 0 ? coerced : fallback;
+}
+
+async function fetchRegistryJson(params: {
+  url: URL;
+  timeoutMs?: number;
+}): Promise<{ ok: true; value: any } | { ok: false; error: string }> {
+  try {
+    const guarded = await fetchWithSsrFGuard({
+      url: params.url.toString(),
+      timeoutMs: typeof params.timeoutMs === "number" ? params.timeoutMs : 10_000,
+      init: {
+        headers: {
+          accept: "application/json",
+        },
+      },
+    });
+    try {
+      if (!guarded.response.ok) {
+        const snippet = await guarded.response.text().catch(() => "");
+        return {
+          ok: false,
+          error: `registry request failed (${guarded.response.status}): ${snippet || guarded.response.statusText}`,
+        };
+      }
+      const json = await guarded.response.json();
+      return { ok: true, value: json };
+    } finally {
+      await guarded.release();
+    }
+  } catch (err) {
+    return {
+      ok: false,
+      error: String((err as Error)?.message || err || "registry request failed"),
+    };
+  }
 }
 
 function resolveBaseHash(params: Record<string, unknown>): string | null {
@@ -401,6 +460,110 @@ function applySecretValues(params: {
 }
 
 export const mcpHandlers: GatewayRequestHandlers = {
+  "mcp.market.search": async ({ params, respond }) => {
+    const base = resolveRegistryBaseUrl(params);
+    let url: URL;
+    try {
+      url = new URL("/servers", base);
+    } catch {
+      respond(true, { ok: false, error: "invalid registryBaseUrl" }, undefined);
+      return;
+    }
+
+    const query = asString(params.query);
+    if (query) {
+      url.searchParams.set("q", query);
+    }
+    url.searchParams.set("page", String(coercePositiveInt(params.page, 1)));
+    url.searchParams.set("pageSize", String(coercePositiveInt(params.pageSize, 20)));
+
+    const res = await fetchRegistryJson({ url });
+    if (!res.ok) {
+      respond(true, { ok: false, error: res.error }, undefined);
+      return;
+    }
+
+    const serversRaw = (res.value as any)?.servers;
+    const paginationRaw = (res.value as any)?.pagination;
+    const servers = Array.isArray(serversRaw) ? serversRaw : [];
+    const pagination = isPlainObject(paginationRaw) ? paginationRaw : {};
+
+    const items = servers
+      .map((item: any) => ({
+        qualifiedName: asString(item?.qualifiedName),
+        displayName: asString(item?.displayName) || asString(item?.qualifiedName),
+        ...(asString(item?.description) ? { description: asString(item.description) } : {}),
+        ...(asString(item?.iconUrl) ? { iconUrl: asString(item.iconUrl) } : {}),
+      }))
+      .filter((item: any) => item.qualifiedName && item.displayName);
+
+    respond(
+      true,
+      {
+        ok: true,
+        items,
+        pagination: {
+          currentPage: coercePositiveInt((pagination as any).currentPage, 1),
+          pageSize: coercePositiveInt((pagination as any).pageSize, items.length || 20),
+          totalPages: coercePositiveInt((pagination as any).totalPages, 1),
+          totalCount: coercePositiveInt((pagination as any).totalCount, items.length),
+        },
+        registryBaseUrl: base,
+      },
+      undefined,
+    );
+  },
+
+  "mcp.market.detail": async ({ params, respond }) => {
+    const qualifiedName = asString(params.qualifiedName);
+    if (!qualifiedName) {
+      respond(true, { ok: false, error: "qualifiedName is required" }, undefined);
+      return;
+    }
+
+    const base = resolveRegistryBaseUrl(params);
+    let url: URL;
+    try {
+      url = new URL(`/servers/${encodeQualifiedNamePath(qualifiedName)}`, base);
+    } catch {
+      respond(true, { ok: false, error: "invalid registryBaseUrl" }, undefined);
+      return;
+    }
+
+    const res = await fetchRegistryJson({ url });
+    if (!res.ok) {
+      respond(true, { ok: false, error: res.error }, undefined);
+      return;
+    }
+
+    const raw = res.value as any;
+    const connectionsRaw = Array.isArray(raw?.connections) ? raw.connections : [];
+    const connections = connectionsRaw
+      .map((entry: any) => ({
+        type: "http" as const,
+        deploymentUrl: asString(entry?.deploymentUrl || entry?.url || raw?.deploymentUrl),
+        ...(asString(entry?.authType) ? { authType: asString(entry.authType) } : {}),
+        ...(isPlainObject(entry?.configSchema) ? { configSchema: entry.configSchema } : {}),
+      }))
+      .filter((conn: any) => Boolean(conn.deploymentUrl));
+
+    respond(
+      true,
+      {
+        ok: true,
+        detail: {
+          qualifiedName: asString(raw?.qualifiedName) || qualifiedName,
+          displayName: asString(raw?.displayName) || qualifiedName,
+          ...(asString(raw?.description) ? { description: asString(raw.description) } : {}),
+          ...(asString(raw?.iconUrl) ? { iconUrl: asString(raw.iconUrl) } : {}),
+          connections,
+        },
+        registryBaseUrl: base,
+      },
+      undefined,
+    );
+  },
+
   "mcp.presets.list": async ({ respond }) => {
     const snapshot = await readConfigFileSnapshot();
     if (!snapshot.valid) {
