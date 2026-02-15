@@ -62,6 +62,7 @@ type McpPresetRow = {
 };
 
 const DEFAULT_MCP_MARKET_REGISTRY_BASE_URL = "https://registry.smithery.ai";
+const MCP_MARKET_SMITHERY_API_KEY_REF = "mcp:market:smithery:apikey";
 
 function asString(value: unknown): string {
   return String(value || "").trim();
@@ -169,6 +170,59 @@ function encodeQualifiedNamePath(qualifiedName: string): string {
 function resolveRegistryBaseUrl(params: Record<string, unknown>): string {
   const raw = asString(params.registryBaseUrl);
   return raw || DEFAULT_MCP_MARKET_REGISTRY_BASE_URL;
+}
+
+function resolveAuthType(value: unknown): "none" | "bearer" {
+  const raw = asString(value).toLowerCase();
+  if (raw === "none") return "none";
+  return "bearer";
+}
+
+function resolveRawMcpHubPluginConfig(config: any): Record<string, unknown> {
+  const entry = config?.plugins?.entries?.["mcp-hub"];
+  return isPlainObject(entry?.config) ? (entry.config as Record<string, unknown>) : {};
+}
+
+function buildMarketConfigPayload(config: any): {
+  registryBaseUrl: string;
+  apiKeyConfigured: boolean;
+} {
+  const rawConfig = resolveRawMcpHubPluginConfig(config);
+  const marketConfig = isPlainObject(rawConfig.marketConfig)
+    ? (rawConfig.marketConfig as Record<string, unknown>)
+    : {};
+  const registryBaseUrl =
+    asString(marketConfig.registryBaseUrl) || DEFAULT_MCP_MARKET_REGISTRY_BASE_URL;
+  const apiKeyRef = asString(marketConfig.apiKeyRef) || MCP_MARKET_SMITHERY_API_KEY_REF;
+  return {
+    registryBaseUrl,
+    apiKeyConfigured: hasSecret(apiKeyRef),
+  };
+}
+
+function applyMarketConfigPatch(config: any, patch: Record<string, unknown>) {
+  const plugins = config.plugins ? { ...config.plugins } : {};
+  const entries = plugins.entries ? { ...plugins.entries } : {};
+  const mcpHubEntry = entries["mcp-hub"] ? { ...entries["mcp-hub"] } : {};
+
+  const currentConfig = isPlainObject(mcpHubEntry.config)
+    ? (mcpHubEntry.config as Record<string, unknown>)
+    : {};
+  const currentMarketConfig = isPlainObject(currentConfig.marketConfig)
+    ? (currentConfig.marketConfig as Record<string, unknown>)
+    : {};
+
+  mcpHubEntry.config = {
+    ...currentConfig,
+    marketConfig: {
+      ...currentMarketConfig,
+      ...patch,
+    },
+  };
+  mcpHubEntry.enabled = true;
+  entries["mcp-hub"] = mcpHubEntry;
+  plugins.entries = entries;
+  return { ...config, plugins };
 }
 
 function coercePositiveInt(input: unknown, fallback: number): number {
@@ -280,6 +334,67 @@ function sanitizeConnection(input: unknown): McpProviderConfigEntry["connection"
   };
 }
 
+function sanitizeRegistryTools(input: unknown): McpProviderConfigEntry["tools"] | undefined {
+  if (!Array.isArray(input)) return undefined;
+  const rows = input
+    .map((tool: any) => {
+      const name = asString(tool?.name);
+      if (!name) return null;
+      const description = asString(tool?.description);
+      const inputSchema = isPlainObject(tool?.inputSchema)
+        ? (tool.inputSchema as Record<string, unknown>)
+        : undefined;
+      return {
+        name,
+        command: name,
+        ...(description ? { description } : {}),
+        ...(inputSchema ? { inputSchema } : {}),
+      };
+    })
+    .filter(Boolean) as any[];
+  return rows.length > 0 ? (rows as any) : undefined;
+}
+
+function inferMarketRequiredSecrets(params: {
+  authType: "none" | "bearer";
+  configSchema?: Record<string, unknown>;
+  secretRefs?: Record<string, string>;
+  secretValues?: Record<string, unknown>;
+}): string[] | undefined {
+  if (params.authType === "none") {
+    return undefined;
+  }
+
+  const out = new Set<string>(["token"]);
+
+  const schema = params.configSchema;
+  if (isPlainObject(schema)) {
+    const required = Array.isArray((schema as any).required)
+      ? ((schema as any).required as unknown[])
+      : [];
+    for (const entry of required) {
+      const key = asString(entry);
+      if (!key) continue;
+      if (/token|key|secret|password/i.test(key)) {
+        out.add(key);
+      }
+    }
+  }
+
+  for (const key of Object.keys(params.secretRefs || {})) {
+    const normalized = asString(key);
+    if (normalized) out.add(normalized);
+  }
+
+  for (const key of Object.keys(params.secretValues || {})) {
+    const normalized = asString(key);
+    if (normalized) out.add(normalized);
+  }
+
+  const values = Array.from(out).filter(Boolean);
+  return values.length > 0 ? values : undefined;
+}
+
 function resolveEntrySecrets(entry: McpProviderConfigEntry): Record<string, string> {
   const secrets: Record<string, string> = {};
   for (const [fieldKey, secretRef] of Object.entries(entry.secretRefs || {})) {
@@ -338,6 +453,7 @@ function buildSnapshotPayload(params: {
   hub: McpHubConfig;
   toolDefinitions: ReturnType<typeof listToolDefinitions>;
   hash?: string;
+  marketConfig?: { registryBaseUrl: string; apiKeyConfigured: boolean };
 }) {
   const toolCountByProviderId = new Map<string, number>();
   for (const definition of params.toolDefinitions) {
@@ -355,6 +471,9 @@ function buildSnapshotPayload(params: {
     return {
       providerId,
       label: entry.label || providerId,
+      source: entry.source === "catalog" ? "market" : "builtin",
+      ...(entry.qualifiedName ? { qualifiedName: entry.qualifiedName } : {}),
+      ...(entry.implementationSource ? { implementationSource: entry.implementationSource } : {}),
       configured,
       enabled: entry.enabled === true,
       available,
@@ -386,6 +505,7 @@ function buildSnapshotPayload(params: {
     ok: true,
     hash: params.hash || "",
     providers: rows,
+    ...(params.marketConfig ? { marketConfig: params.marketConfig } : {}),
   };
 }
 
@@ -564,6 +684,371 @@ export const mcpHandlers: GatewayRequestHandlers = {
     );
   },
 
+  "mcp.market.refresh": async ({ params, respond, context }) => {
+    const snapshot = await readConfigFileSnapshot();
+    if (!snapshot.valid) {
+      respond(
+        true,
+        { ok: false, error: "invalid config; fix before refreshing MCP market" },
+        undefined,
+      );
+      return;
+    }
+
+    const hashCheck = requireConfigBaseHash(params, snapshot);
+    if (!hashCheck.ok) {
+      respond(true, { ok: false, error: hashCheck.error }, undefined);
+      return;
+    }
+
+    const rawConfig = resolveRawMcpHubPluginConfig(snapshot.config);
+    const marketConfig = isPlainObject(rawConfig.marketConfig)
+      ? (rawConfig.marketConfig as Record<string, unknown>)
+      : {};
+    const apiKeyRef = asString(marketConfig.apiKeyRef) || MCP_MARKET_SMITHERY_API_KEY_REF;
+
+    const registryBaseUrl = resolveRegistryBaseUrl(params);
+
+    if (Object.prototype.hasOwnProperty.call(params, "smitheryApiKey")) {
+      const smitheryApiKey = (params as any).smitheryApiKey;
+      if (smitheryApiKey === null) {
+        const del = deleteSecret(apiKeyRef);
+        if (!del.ok) {
+          respond(
+            true,
+            { ok: false, error: del.error || "failed to clear Smithery API key" },
+            undefined,
+          );
+          return;
+        }
+      } else {
+        const value = asString(smitheryApiKey);
+        if (value) {
+          const set = setSecret(apiKeyRef, value);
+          if (!set.ok) {
+            respond(
+              true,
+              { ok: false, error: set.error || "failed to save Smithery API key" },
+              undefined,
+            );
+            return;
+          }
+        }
+      }
+    }
+
+    const nextConfig = applyMarketConfigPatch(snapshot.config, {
+      registryBaseUrl,
+      apiKeyRef,
+      updatedAt: new Date().toISOString(),
+    });
+    await writeConfigFile(nextConfig);
+
+    const restart = scheduleGatewaySigusr1Restart({
+      delayMs: 1200,
+      reason: "mcp.market.refresh",
+    });
+
+    const nextSnapshot = await readConfigFileSnapshot();
+    const stableConfig = nextSnapshot.valid ? nextSnapshot.config : nextConfig;
+    const stableHub = readMcpHubConfig(stableConfig);
+    const toolDefinitions = listToolDefinitions(context, stableConfig);
+
+    respond(
+      true,
+      {
+        ...buildSnapshotPayload({
+          hub: stableHub,
+          toolDefinitions,
+          hash: nextSnapshot.valid ? resolveConfigSnapshotHash(nextSnapshot) || "" : "",
+          marketConfig: buildMarketConfigPayload(stableConfig),
+        }),
+        restartRequired: true,
+        restart,
+      },
+      undefined,
+    );
+  },
+
+  "mcp.market.install": async ({ params, respond, context }) => {
+    const qualifiedName = asString((params as any).qualifiedName);
+    if (!qualifiedName) {
+      respond(true, { ok: false, error: "qualifiedName is required" }, undefined);
+      return;
+    }
+
+    const providerId = normalizeMcpProviderId(
+      asString((params as any).providerId || qualifiedName),
+    );
+    if (!providerId) {
+      respond(true, { ok: false, error: "providerId is required" }, undefined);
+      return;
+    }
+
+    const snapshot = await readConfigFileSnapshot();
+    if (!snapshot.valid) {
+      respond(
+        true,
+        { ok: false, error: "invalid config; fix before installing MCP market provider" },
+        undefined,
+      );
+      return;
+    }
+
+    const hashCheck = requireConfigBaseHash(params, snapshot);
+    if (!hashCheck.ok) {
+      respond(true, { ok: false, error: hashCheck.error }, undefined);
+      return;
+    }
+
+    const registryBaseUrl = resolveRegistryBaseUrl(params);
+    let detailUrl: URL;
+    try {
+      detailUrl = new URL(`/servers/${encodeQualifiedNamePath(qualifiedName)}`, registryBaseUrl);
+    } catch {
+      respond(true, { ok: false, error: "invalid registryBaseUrl" }, undefined);
+      return;
+    }
+
+    const detailRes = await fetchRegistryJson({ url: detailUrl });
+    if (!detailRes.ok) {
+      respond(true, { ok: false, error: detailRes.error }, undefined);
+      return;
+    }
+    const detail = detailRes.value as any;
+
+    const hub = readMcpHubConfig(snapshot.config);
+    const previous = hub.providers[providerId];
+
+    const fields = sanitizeFieldValues((params as any).fields) || {};
+    const deploymentUrl =
+      asString((fields as any).deploymentUrl) || asString(detail?.deploymentUrl);
+    if (!deploymentUrl) {
+      respond(
+        true,
+        { ok: false, error: "deploymentUrl is required (missing in market detail)" },
+        undefined,
+      );
+      return;
+    }
+
+    const connections = Array.isArray(detail?.connections) ? (detail.connections as any[]) : [];
+    const selectedConnection =
+      connections.find((entry: any) => asString(entry?.deploymentUrl) === deploymentUrl) ||
+      connections[0] ||
+      null;
+    const authType = resolveAuthType(selectedConnection?.authType);
+    const configSchema = isPlainObject(selectedConnection?.configSchema)
+      ? (selectedConnection.configSchema as Record<string, unknown>)
+      : undefined;
+
+    const nextEntry: McpProviderConfigEntry = {
+      ...(previous || { enabled: true }),
+      source: "catalog",
+      qualifiedName,
+      enabled: (params as any).enabled !== false,
+      label:
+        asString((params as any).label) ||
+        asString(detail?.displayName) ||
+        previous?.label ||
+        providerId,
+      ...(asString(detail?.iconUrl) ? { iconUrl: asString(detail.iconUrl) } : {}),
+      ...(asString(detail?.description) ? { description: asString(detail.description) } : {}),
+      ...(asString(detail?.homepage) ? { homepage: asString(detail.homepage) } : {}),
+      ...(asString(detail?.website) ? { website: asString(detail.website) } : {}),
+      ...(asString(detail?.docsUrl) ? { docsUrl: asString(detail.docsUrl) } : {}),
+      connection: {
+        type: "http",
+        deploymentUrl,
+        ...(authType ? { authType } : {}),
+        ...(configSchema ? { configSchema } : {}),
+      },
+      ...(Object.keys(fields).length > 0 ? { fields } : {}),
+      updatedAt: new Date().toISOString(),
+      ...(previous?.installedAt ? {} : { installedAt: new Date().toISOString() }),
+    };
+
+    if (nextEntry.fields && "deploymentUrl" in nextEntry.fields) {
+      delete (nextEntry.fields as any).deploymentUrl;
+      if (Object.keys(nextEntry.fields).length === 0) {
+        delete nextEntry.fields;
+      }
+    }
+
+    const secretValues =
+      (params as any).secretValues &&
+      typeof (params as any).secretValues === "object" &&
+      !Array.isArray((params as any).secretValues)
+        ? ((params as any).secretValues as Record<string, unknown>)
+        : undefined;
+
+    const secretResult = applySecretValues({
+      providerId,
+      existingSecretRefs: { ...(previous?.secretRefs || {}) },
+      secretValues,
+    });
+    if (secretResult.fieldErrors.length > 0) {
+      respond(
+        true,
+        { ok: false, error: "invalid secret payload", fieldErrors: secretResult.fieldErrors },
+        undefined,
+      );
+      return;
+    }
+    nextEntry.secretRefs = secretResult.nextSecretRefs;
+    if (Object.keys(nextEntry.secretRefs || {}).length === 0) {
+      delete nextEntry.secretRefs;
+    }
+
+    const requiredSecrets = inferMarketRequiredSecrets({
+      authType,
+      configSchema,
+      secretRefs: nextEntry.secretRefs,
+      secretValues,
+    });
+    if (requiredSecrets) {
+      nextEntry.requiredSecrets = requiredSecrets;
+    } else {
+      delete nextEntry.requiredSecrets;
+    }
+
+    const registryTools = sanitizeRegistryTools(detail?.tools);
+    if (registryTools) {
+      nextEntry.tools = registryTools;
+    } else {
+      try {
+        const secrets = resolveEntrySecrets(nextEntry);
+        const tools = await discoverMcpHttpTools({
+          provider: nextEntry,
+          secrets,
+          timeoutMs:
+            typeof (params as any).timeoutMs === "number" ? (params as any).timeoutMs : undefined,
+        });
+        if (tools.length > 0) {
+          nextEntry.tools = tools;
+        } else {
+          delete nextEntry.tools;
+        }
+      } catch {
+        delete nextEntry.tools;
+      }
+    }
+
+    const nextProviders: Record<string, McpProviderConfigEntry> = {
+      ...hub.providers,
+      [providerId]: nextEntry,
+    };
+    let nextConfig = writeMcpHubConfig(snapshot.config, { version: 3, providers: nextProviders });
+    nextConfig = applyMarketConfigPatch(nextConfig, {
+      registryBaseUrl,
+      apiKeyRef: MCP_MARKET_SMITHERY_API_KEY_REF,
+    });
+    await writeConfigFile(nextConfig);
+
+    const restart = scheduleGatewaySigusr1Restart({
+      delayMs: 1200,
+      reason: "mcp.market.install",
+    });
+
+    const nextSnapshot = await readConfigFileSnapshot();
+    const stableConfig = nextSnapshot.valid ? nextSnapshot.config : nextConfig;
+    const stableHub = readMcpHubConfig(stableConfig);
+    const toolDefinitions = listToolDefinitions(context, stableConfig);
+
+    respond(
+      true,
+      {
+        ...buildSnapshotPayload({
+          hub: stableHub,
+          toolDefinitions,
+          hash: nextSnapshot.valid ? resolveConfigSnapshotHash(nextSnapshot) || "" : "",
+          marketConfig: buildMarketConfigPayload(stableConfig),
+        }),
+        restartRequired: true,
+        restart,
+      },
+      undefined,
+    );
+  },
+
+  "mcp.market.uninstall": async ({ params, respond, context }) => {
+    const providerId = normalizeMcpProviderId(asString((params as any).providerId));
+    if (!providerId) {
+      respond(true, { ok: false, error: "providerId is required" }, undefined);
+      return;
+    }
+
+    const snapshot = await readConfigFileSnapshot();
+    if (!snapshot.valid) {
+      respond(
+        true,
+        { ok: false, error: "invalid config; fix before uninstalling MCP market provider" },
+        undefined,
+      );
+      return;
+    }
+
+    const hashCheck = requireConfigBaseHash(params, snapshot);
+    if (!hashCheck.ok) {
+      respond(true, { ok: false, error: hashCheck.error }, undefined);
+      return;
+    }
+
+    const hub = readMcpHubConfig(snapshot.config);
+    const previous = hub.providers[providerId];
+    if (!previous) {
+      const toolDefinitions = listToolDefinitions(context, snapshot.config);
+      respond(
+        true,
+        buildSnapshotPayload({
+          hub,
+          toolDefinitions,
+          hash: resolveConfigSnapshotHash(snapshot) || "",
+          marketConfig: buildMarketConfigPayload(snapshot.config),
+        }),
+        undefined,
+      );
+      return;
+    }
+
+    if (previous.secretRefs) {
+      for (const secretRef of Object.values(previous.secretRefs)) {
+        deleteSecret(secretRef);
+      }
+    }
+
+    const nextProviders: Record<string, McpProviderConfigEntry> = { ...hub.providers };
+    delete nextProviders[providerId];
+
+    const nextConfig = writeMcpHubConfig(snapshot.config, { version: 3, providers: nextProviders });
+    await writeConfigFile(nextConfig);
+
+    const restart = scheduleGatewaySigusr1Restart({
+      delayMs: 1200,
+      reason: "mcp.market.uninstall",
+    });
+
+    const nextSnapshot = await readConfigFileSnapshot();
+    const stableConfig = nextSnapshot.valid ? nextSnapshot.config : nextConfig;
+    const stableHub = readMcpHubConfig(stableConfig);
+    const toolDefinitions = listToolDefinitions(context, stableConfig);
+
+    respond(
+      true,
+      {
+        ...buildSnapshotPayload({
+          hub: stableHub,
+          toolDefinitions,
+          hash: nextSnapshot.valid ? resolveConfigSnapshotHash(nextSnapshot) || "" : "",
+          marketConfig: buildMarketConfigPayload(stableConfig),
+        }),
+        restartRequired: true,
+        restart,
+      },
+      undefined,
+    );
+  },
+
   "mcp.presets.list": async ({ respond }) => {
     const snapshot = await readConfigFileSnapshot();
     if (!snapshot.valid) {
@@ -678,6 +1163,7 @@ export const mcpHandlers: GatewayRequestHandlers = {
         hub,
         toolDefinitions,
         hash: resolveConfigSnapshotHash(snapshot) || "",
+        marketConfig: buildMarketConfigPayload(snapshot.config),
       }),
       undefined,
     );
@@ -840,6 +1326,7 @@ export const mcpHandlers: GatewayRequestHandlers = {
           hub: stableHub,
           toolDefinitions,
           hash: nextSnapshot.valid ? resolveConfigSnapshotHash(nextSnapshot) || "" : "",
+          marketConfig: buildMarketConfigPayload(stableConfig),
         }),
         restartRequired: true,
         restart,

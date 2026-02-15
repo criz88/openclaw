@@ -129,6 +129,9 @@ const WRITE_METHODS = new Set([
   "chat.abort",
   "browser.request",
   "mcp.providers.apply",
+  "mcp.market.install",
+  "mcp.market.uninstall",
+  "mcp.market.refresh",
   "tools.call",
   "pairing.approve",
 ]);
